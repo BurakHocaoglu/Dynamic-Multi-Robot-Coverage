@@ -21,13 +21,20 @@ namespace task_planning {
             virtual bool takeoff(float);
             virtual bool land();
 
+            virtual void velocity_pub(float, float, float);
+            virtual void position_pub(float, float, float, bool);
+
+            // virtual void log();
+
         private:
             ros::NodeHandle node_handle_;
 
+            uint8_t id;
+            bool ready_;
+            std::string tag_;
             ControllerType type_;
             ControllerArgs args_;
             ControllerState state_;
-            bool ready_;
     };
 
 }

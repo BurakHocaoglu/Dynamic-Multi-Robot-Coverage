@@ -2,7 +2,6 @@
 #define TASK_PLANNING_CONNECTOR_H
 
 #include <ros/ros.h>
-#include <unordered_map>
 #include "task_planning/TypeUtils.h"
 
 namespace task_planning {

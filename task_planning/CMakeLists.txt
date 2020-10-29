@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(task_planning)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++14)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -17,11 +17,11 @@ find_package(catkin REQUIRED COMPONENTS
 # find_package(Boost REQUIRED COMPONENTS system)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+add_message_files(
+  FILES
+  FlightState.msg
+  FlightState2.msg
+)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -38,15 +38,15 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs  # Or other packages containing msgs
-# )
+generate_messages(
+  DEPENDENCIES
+  std_msgs mavros_msgs geometry_msgs
+)
 
 catkin_package(
-#  INCLUDE_DIRS include
+  INCLUDE_DIRS include
 #  LIBRARIES task_planning
-#  CATKIN_DEPENDS mavros roscpp rospy
+  CATKIN_DEPENDS mavros roscpp rospy
 #  DEPENDS system_lib
 )
 

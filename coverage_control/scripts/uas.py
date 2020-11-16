@@ -1,184 +1,275 @@
-import sys
-import rospy
-import threading
-import traceback
-import numpy as np
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-from std_msgs.msg import String
-from nav_msgs.msg import Odometry
-from mavros_msgs.msg import State
-from mavros_msgs.srv import StreamRate, SetMode, CommandTOL, CommandBool
-from geometry_msgs.msg import Twist, Pose
-from coverage_control.msg import FlightState
+from utils import *
 
-from vgraph import Node, VGraph
+from cvxopt import matrix, solvers
+from coverage_control.msg import FlightState, FlightStateCompressed, VCell
 
 class UAS:
 
-	def __init__(self, name, init):
-		self.name = name
-		self.p0 = np.array(init, dtype=float)
-		self.ready = False
-		self.mavros_state = None
-		self.flight_state = FlightState(self.name, Pose())
-		self.local_pos = Pose()
-		self.velocity = Twist()
-		self.flight_pos = np.array(init, dtype=float)
-		self.vcell = VGraph()
+	def __init__(self, uid, paramFile):
+		self.uid = uid
+		self.position = np.zeros(2)
+		self.velocity = np.zeros(2)
 		self.goal = np.zeros(2)
+		self.voronoi_cell = []
+		self.args = dict()
 		self.nb_states = dict()
+		self.boundary = []
+		self.logger = None
+		self.converged = False
+		self.setup(paramFile)
 
-		self.stream_service = "/{}/mavros/set_stream_rate".format(name)
-		self.arm_service = "/{}/mavros/cmd/arming".format(name)
-		self.takeoff_service = "/{}/mavros/cmd/takeoff".format(name)
-		self.mode_service = "/{}/mavros/set_mode".format(name)
-		self.land_service = "/{}/mavros/cmd/land".format(name)
+		self.H = matrix([[2., 0.], [0., 2.]], tc='d')
 
-		self.stream_client = rospy.ServiceProxy(self.stream_service, StreamRate)
-		self.arm_client = rospy.ServiceProxy(self.arm_service, CommandBool)
-		self.takeoff_client = rospy.ServiceProxy(self.takeoff_service, CommandTOL)
-		self.mode_client = rospy.ServiceProxy(self.mode_service, SetMode)
-		self.land_client = rospy.ServiceProxy(self.land_service, CommandTOL)
+		self.flight_state_sub = rospy.Subscriber('/flight_states', FlightStateCompressed, self.flight_state_cb)
 
-		self.mavros_state_sub = rospy.Subscriber('/{}/mavros/state'.format(self.name), State, self.mavros_state_cb)
-		self.local_pos_sub = rospy.Subscriber('/{}/mavros/global_position/local'.format(self.name), Odometry, self.local_pos_cb)
-		self.command_line_sub = rospy.Subscriber('/{}/command_line'.format(self.name), String, self.command_line_cb)
-		self.flight_state_sub = rospy.Subscriber('/flight_state', FlightState, self.flight_state_cb)
-
-		self.flight_state_pub = rospy.Publisher('/flight_state', FlightState, queue_size=1)
-		self.velocity_pub = rospy.Publisher("/{}/mavros/setpoint_velocity/cmd_vel_unstamped".format(name), Twist, queue_size=1)
-
-		self.valid = False
-		self.terminate = False
-		self.flight_thread = threading.Thread(name='{}_flight'.format(self.name), target=self.flight)
-
-	def mavros_state_cb(self, msg):
-		self.mavros_state = msg
-
-	def local_pos_cb(self, msg):
-		self.local_pos = msg.pose.pose
-
-	def command_line_cb(self, msg):
-		self.apply(msg.data)
+		self.flight_state_pub = rospy.Publisher('/flight_states', FlightStateCompressed, queue_size=1)
+		self.voronoi_cell_pub = rospy.Publisher('/voronoi_cells', VCell, queue_size=1)
 
 	def flight_state_cb(self, msg):
-		p = msg.pose
-		self.nb_states[msg.name] = np.array([p.position.x, p.position.y], dtype=float)
+		if msg.id == self.uid:
+			return
 
-	def apply(self, cmd):
-		if cmd == 'guided':
-			self.set_mode('GUIDED')
+		if self.nb_states.get(msg.id) is None:
+			self.nb_states[msg.id] = {'pos': np.array([msg.x, msg.y], dtype=float), 'vel': np.array([msg.vx, msg.vy], dtype=float)}
 
-		elif cmd == 'arm':
-			self.arm()
+		else:
+			self.nb_states[msg.id]['pos'] = np.array([msg.x, msg.y], dtype=float)
+			self.nb_states[msg.id]['vel'] = np.array([msg.vx, msg.vy], dtype=float)
 
-		elif cmd == 'disarm':
-			self.disarm()
+	def setup(self, paramFile):
+		try:
+			if paramFile is None:
+				rospy.logerr()
+				sys.exit(-1)
 
-		elif cmd == 'takeoff':
-			self.takeoff()
+			params = None
+			with open(paramFile, 'r') as PF:
+				params = yaml.load(PF)
 
-		elif cmd == 'land':
-			self.land()
+			if not params:
+				rospy.logerr('Empty parameter structure!')
+				sys.exit(-1)
 
-		elif cmd == 'move':
-			self.flight_thread.start()
+			init = params.get('init')
+			if init is None:
+				rospy.logwarn('UAS {} could not find: init!'.format(self.uid))
+				sys.exit(-1)
 
-	def arm(self):
-		rospy.wait_for_service(self.arm_service)
-		self.arm_client(True)
+			else:
+				self.position = np.array(init, dtype=float)
+				rospy.loginfo('UAS {0} will start from position {1}.'.format(self.uid, self.position))
 
-	def disarm(self):
-		rospy.wait_for_service(self.arm_service)
-		self.arm_client(False)
+			_boundary = params.get('boundary')
+			if _boundary is None:
+				rospy.logwarn('UAS {} could not find: boundary!'.format(self.uid))
+				sys.exit(-1)
 
-	def set_mode(self, mode):
-		rospy.wait_for_service(self.mode_service)
-		self.mode_client(0, mode)
+			else:
+				x_comps = map(lambda a: a[0], _boundary)
+				y_comps = map(lambda a: a[1], _boundary)
+				self.args['xlim'] = [min(x_comps), max(x_comps)]
+				self.args['ylim'] = [min(y_comps), max(y_comps)]
+				rospy.loginfo('UAS {0} has set space limits from X({1}) to Y({2}).'.format(self.uid, self.args['xlim'], self.args['ylim']))
 
-	def takeoff(self, h=10.):
-		rospy.wait_for_service(self.takeoff_service)
-		res = self.takeoff_client(0, 0, 0, 0, h)
-		if res.success:
-			self.ready = True
+				np_boundary = [np.array(bv, dtype=float) for bv in _boundary]
+				sorted_boundary = angular_sort(np.mean(np_boundary, axis=0), np_boundary)
+				sorted_boundary.append(sorted_boundary[0])
+				for i in range(len(sorted_boundary) - 1):
+					middle = (sorted_boundary[i] + sorted_boundary[i + 1]) * 0.5
+					direction = sorted_boundary[i + 1] - sorted_boundary[i]
+					normal = np.array([direction[1], -direction[0]], dtype=float)
+					normal *= np.linalg.norm(normal)
+					self.boundary.append((normal, middle))
 
-	def land(self):
-		rospy.wait_for_service(self.land_service)
-		self.land_client(0, 0, 0, 0, 0.1)
+				rospy.loginfo('UAS {} has loaded boundary bisectors.'.format(self.uid))
 
-	def hasReachedGoal(self):
-		p = np.array([self.flight_state.pose.position.x, self.flight_state.pose.position.y], dtype=float)
-		return self.valid and np.linalg.norm(self.goal - p) <= 0.1
+			rate = params.get('rate')
+			if rate is None:
+				rospy.logwarn('UAS {} could not find: rate! Setting to default 4 Hz.'.format(self.uid))
+				self.args['rate'] = 4.
 
-	def broadcastState(self):
-		p = Pose()
-		p.position.x = self.local_pos.position.x + self.p0[0]
-		p.position.y = self.local_pos.position.y + self.p0[1]
+			else:
+				self.args['rate'] = rate
+				rospy.loginfo('UAS {0} will run at rate {1} Hz.'.format(self.uid, self.args['rate']))
 
-		self.flight_state = FlightState(self.name, p)
-		self.flight_state_pub.publish(self.flight_state)
+			vmax = params.get('vmax')
+			if vmax is None:
+				rospy.logwarn('UAS {} could not find: vmax! Setting to default 1 m/s.'.format(self.uid))
+				self.args['vmax'] = 1.
 
-	def computeBisectors(self):
-		cons, vals, bisectors = [], [], []
-		p_i = np.array([self.flight_state.pose.position.x, self.flight_state.pose.position.y], dtype=float)
+			else:
+				self.args['vmax'] = vmax
+				rospy.loginfo('UAS {0} will have max velocity magnitude at {1} m/s.'.format(self.uid, self.args['vmax']))
 
-		for nb, st in self.nb_states.items():
-			p_j = np.array([st.pose.position.x, st.pose.position.y], dtype=float)
-			normal = p_j - p_i
-			mid = (p_i + p_j) * 0.5
+			logdir_prefix = params.get('logdir_prefix')
+			if logdir_prefix is None:
+				cwd = os.getcwd()
+				rospy.logwarn('UAS {0} could not find: logdir_prefix! Setting to default {1}.'.format(self.uid, cwd))
+				logdir_prefix = cwd
 
-			cons.append(normal)
-			vals.append(normal.dot(mid))
-			bisectors.append((normal, mid))
+			else:
+				self.args['logdir_prefix'] = logdir_prefix
+				rospy.loginfo('UAS {0} will log to the path {1}.'.format(self.uid, self.args['logdir_prefix']))
 
-		A = np.array(cons, dtype=float)
-		b = np.array(vals, dtype=float)
-		self.vcell = VGraph()
+			stamp = datetime.datetime.now()
+			logdir = '{0}{1}'.format(self.args['logdir_prefix'], stamp.strftime('%b_%d_%Y_%H_%M'))
 
-		for i in range(len(bisectors)):
+			if not os.path.exists(logdir):
+				rospy.logwarn("Path {} does not exist. Creating...".format(logdir))
+				os.makedirs(logdir)
+
+			self.logger = open("{0}/uas{1}_log.txt".format(logdir, self.uid), 'w+')
+
+		except Exception as e:
+			print(traceback.format_exc())
+
+		finally:
+			rospy.loginfo('UAS {} has been setup.'.format(self.uid))
+
+	def broadcast_state(self):
+		self.flight_state_pub.publish(FlightStateCompressed(self.uid, self.position[0], self.position[1], self.velocity[0], self.velocity[1]))
+
+	def broadcast_cell(self):
+		vcell_data = []
+		for v in self.voronoi_cell:
+			vcell_data.extend(list(v))
+
+		self.voronoi_cell_pub.publish(VCell(self.uid, 2, vcell_data))
+
+	def dump_bisectors(self, bisectors, end=False):
+		self.logger.write('UAS {} - Bisectors:\n'.format(self.uid))
+		for b in bisectors:
+			self.logger.write('\tBisector:\n')
+			self.logger.write('\t\tNormal: {}\n'.format(b[0]))
+			self.logger.write('\t\tMiddle: {}\n'.format(b[1]))
+			self.logger.write('\t-\n')
+		self.logger.write('---\n')
+
+		if end:
+			self.logger.write('#########################\n')
+
+	def dump_voronoi_cell(self):
+		self.logger.write('UAS {} - Voronoi Cell:\n'.format(self.uid))
+		for v in self.voronoi_cell:
+			self.logger.write('\t{}\n'.format(v))
+		self.logger.write('-----\n')
+
+	def check_feasibility(self, A, b, p):
+		product = A.dot(p)
+		diff = product - b
+		# self.logger.write('\t\tUAS {0} feasibility check of A:{1} p:{2} b:{3} has diff: {4}\n\n'.format(self.uid, A, p, b, diff))
+		return np.all(product <= b + .1)
+
+	def dump_nb_states(self):
+		self.logger.write('UAS {} - Neighbour States:\n'.format(self.uid))
+		for nid, nfs in self.nb_states.items():
+			self.logger.write('\t- UAS {0} at {1}\n'.format(nid, nfs['pos']))
+		self.logger.write('---\n')
+
+	def compute_bisectors(self):
+		bisectors = []
+		constraints, values = [], []
+		tol = 0.1
+
+		bisectors.extend(self.boundary)
+		self.dump_bisectors(bisectors)
+
+		for _, fs in self.nb_states.items():
+			normal = (fs['pos'] - self.position).round(4)
+			middle = ((fs['pos'] + self.position) * 0.5).round(4)
+			constraints.append(normal)
+			values.append((middle.dot(normal)).round(4))
+			bisectors.append((normal, middle))
+
+		# self.dump_nb_states()
+		# self.dump_bisectors(bisectors, end=True)
+
+		A = np.array(constraints, dtype=float)
+		b = np.array(values, dtype=float)
+		self.voronoi_cell = []
+		# self.logger.write('UAS {} - Voronoi Construction:\n'.format(self.uid))
+		for i in range(len(bisectors) - 1):
 			n_i, m_i = bisectors[i]
-			c_i = n_i.dot(m_i)
+			d_i = m_i.dot(n_i)
 
 			for j in range(i + 1, len(bisectors)):
-				n_i, m_i = bisectors[i]
-				c_j = n_j.dot(m_j)
+				n_j, m_j = bisectors[j]
+				d_j = m_j.dot(n_j)
 
 				try:
-					A_ = np.array([n_i, n_j], dtype=float)
-					b_ = np.array([c_i, c_j], dtype=float)
-					p_ = np.linalg.solve(A_, b_)
+					A_ = np.array([n_i.round(4), n_j.round(4)], dtype=float)
+					b_ = np.array([d_i.round(4), d_j.round(4)], dtype=float)
+					p = np.linalg.solve(A_, b_).round(4)
 
-				except np.linalg.LinAlgException:
+				except np.linalg.LinAlgError:
 					continue
 
 				except:
-					print traceback.format_exc()
+					print(traceback.format_exc())
+					continue
 
-				if np.all(A.dot(p_) <= b):
-				#if np.linalg.norm(A.dot(p_) - b) <= 0.1:
-					bisector_node_i = Node('B{}'.format(i), 'Bisector', m_i, n_i)
-					bisector_node_j = Node('B{}'.format(j), 'Bisector', m_j, n_j)
-					point_node_ij = Node('P{}{}'.format(i, j), 'Point', m_i)
-					self.vcell.addVertexDirect(bisector_node_i)
-					self.vcell.addVertexDirect(bisector_node_j)
-					self.vcell.addVertexDirect(point_node_ij)
-					self.addEdge(bisector_node_i, point_node_ij)
-					self.addEdge(point_node_ij, bisector_node_j)
+				inside_check = is_in_space(self.args['xlim'], self.args['ylim'], p, tol)
+				# feasibility_check = np.all(A.dot(p) <= b + 1.)
+				feasibility_check = self.check_feasibility(A, b, p)
+				if inside_check and feasibility_check:
+					self.voronoi_cell.append(p)
+					# self.logger.write('\t- Candidate {} - Success!\n'.format(p))
 
-	def computeNextGoal(self):
-		traversal = self.vcell.traversal()
+				else:
+					pass
+					# self.logger.write('\t- Candidate {0} - In boundary: {1}, Feasible: {2} - Fail!\n'.format(p, str(inside_check), str(feasibility_check)))
 
-		if len(traversal) < 3:
-			self.valid = False
-			return
+		A_iq = matrix(A, tc='d')
+		b_iq = matrix(b, tc='d')
+		# self.voronoi_cell = angular_sort(self.position, self.voronoi_cell)
+		self.voronoi_cell = angular_sort(np.mean(self.voronoi_cell, axis=0), self.voronoi_cell)
+		self.dump_voronoi_cell()
+		self.broadcast_cell()
 
-		self.goal = np.mean(np.array(traversal, dtype=float), axis=0)
+		return A_iq, b_iq
 
-	def vel_step(self):
-		v = Twist()
-		p_ = np.array([self.flight_state.pose.position.x, self.flight_state.pose.position.y], dtype=float)
-		v_ = self.goal - p_
-		v_ /= np.linalg.norm(v_)
-		v.linear.x = v_[0]
-		v.linear.y = v_[1]
-		self.velocity_pub.publish(v)
+	def set_goal(self, g):
+		change = np.linalg.norm(g - self.goal)
+		self.converged = change <= 0.1
+		self.goal = np.array(g, dtype=float)
+		# rospy.loginfo('UAS {0} goal set to {1}.'.format(self.uid, self.goal))
+
+	def solve_step(self):
+		v_next = self.velocity
+		# self.logger.write('UAS {0} - v_next at solve_step() start: {1}\n'.format(self.uid, v_next))
+
+		if len(self.voronoi_cell) > 3:
+			self.voronoi_cell.append(self.voronoi_cell[0])
+			self.set_goal(get_centroid(self.voronoi_cell, self.uid))
+			v_next = self.goal - self.position
+
+			# self.logger.write('UAS {0} - voronoi cell has >= 3 vertices -> v_next: {1}\n'.format(self.uid, v_next))
+			_norm = np.linalg.norm(v_next)
+
+			if _norm > self.args['vmax']:
+				v_next *= self.args['vmax'] / _norm
+				# self.logger.write('UAS {0} - normalized v_next: {1}\n'.format(self.uid, v_next))
+
+			# if np.any(np.isnan(v_next)):
+			# 	v_next = np.zeros(2)
+
+			return v_next
+
+		# self.logger.write('UAS {0} - voronoi cell has < 3 vertices -> v_next: {1}\n'.format(self.uid, v_next))
+		return np.zeros(2)
+
+	def vel_pub(self):
+		vel_cmd =  Twist()
+		vel_cmd.linear.x = self.velocity[0]
+		vel_cmd.linear.y = self.velocity[1]
+		self.velocity_pub(vel_cmd)
+
+	def execute_step(self, v_next):
+		# self.logger.write('UAS {0} - Before: {1}\n'.format(self.uid, self.position))
+		self.position = self.position + v_next / self.args['rate']
+		# self.logger.write('UAS {0} - After {1}: {2}\n'.format(self.uid, v_next, self.position))
+		# self.logger.write('-----\n')
+		self.velocity = v_next

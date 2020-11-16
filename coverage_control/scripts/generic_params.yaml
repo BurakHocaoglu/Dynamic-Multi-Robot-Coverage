@@ -1,0 +1,26 @@
+rate: 4
+# least_sq_tol: 0.1
+
+# eps: 1.5
+# sigma: 12.
+# alpha: 3.
+# beta: 2.
+# gamma: 8.
+# K1: 0.5
+# K2: 0.06
+# krep: 60.
+# kmem: 30.
+# kbnd: 30.
+# wmax: 0.19635
+# umax: 2.
+# min_goal_discrepancy: 0.94
+# obs_repel_thresh: 5.
+# member_repel_thresh: 30.
+# boundary_repel_thresh: 5.
+# memrep_coeff: -150.
+
+boundary: [[-10., -10.], [-10., 30.], [30., -10.], [30., 30.]]
+init1: [5., 0.]
+init2: [0., 5.]
+init3: [-5., 0.]
+init4: [0., -5.]

@@ -5,7 +5,7 @@ from monitor import *
 
 if __name__ == '__main__':
 	rospy.init_node('monitor', anonymous=False)
-	monitor = Monitor(sys.argv[1])
+	monitor = Monitor()
 
 	rate = rospy.Rate(10)
 	while (not rospy.is_shutdown()) and (not monitor.is_ready()):
@@ -21,3 +21,8 @@ if __name__ == '__main__':
 	# 	rate.sleep()
 
 	rospy.spin()
+
+	# print_grid_to_png(monitor.grid_image, 
+	# 				  '/home/burak/thesis_ws/coverage_map_{}.png'.format(time.time()))
+
+	monitor.save_grid_image()

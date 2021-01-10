@@ -77,24 +77,37 @@ class MAVROSController:
 	def initialize(self, stream_rate=4., height=10.):
 		rospy.loginfo("UAS {} connecting...")
 
-		aux_rate = rospy.Rate(stream_rate)
-		while not rospy.is_shutdown() and not self.cntr_state.connected:
-			aux_rate.sleep()
+		# aux_rate = rospy.Rate(stream_rate)
+		# while not rospy.is_shutdown() and not self.cntr_state.connected:
+		# 	aux_rate.sleep()
+
+		while not self.cntr_state.connected:
+			# aux_rate.sleep()
+			continue
 
 		rospy.loginfo("UAS {} setting stream rate...")
 		self.set_stream_rate(stream_rate)
 
 		rospy.loginfo("UAS {} setting to GUIDED mode...")
-		while not rospy.is_shutdown() and not self.cntr_state.mode != "GUIDED":
+		# while not rospy.is_shutdown() and not self.cntr_state.mode != "GUIDED":
+		# 	self.set_mode("GUIDED")
+		# 	aux_rate.sleep()
+
+		while not self.cntr_state.mode != "GUIDED":
 			self.set_mode("GUIDED")
-			aux_rate.sleep()
+			# aux_rate.sleep()
+			# continue
 
 		rospy.loginfo("UAS {} arming...")
 		time.sleep(1.0)
 
-		while not rospy.is_shutdown() and not self.cntr_state.armed:
+		# while not rospy.is_shutdown() and not self.cntr_state.armed:
+		# 	self.arm(True)
+		# 	aux_rate.sleep()
+
+		while not self.cntr_state.armed:
 			self.arm(True)
-			aux_rate.sleep()
+			# aux_rate.sleep()
 
 		rospy.loginfo("UAS {} trying to takeoff...")
 		time.sleep(5.0)

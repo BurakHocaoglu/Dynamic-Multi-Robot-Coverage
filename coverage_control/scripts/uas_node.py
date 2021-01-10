@@ -13,13 +13,11 @@ if __name__ == '__main__':
 	while not rospy.is_shutdown():
 		uas.broadcast_state()
 
-		if time.time() - instance_after_init > 10.:
+		if time.time() - instance_after_init > 5.:
 			A_iq, b_iq = uas.compute_bisectors()
 			v_step = uas.solve_step()
 			uas.execute_step(v_step)
 
-		# rems = rate.remaining()
-		# rospy.loginfo('UAS {0} has remaining ({1}, {2}).'.format(uid, rems.secs, rems.nsecs))
 		rate.sleep()
 
 	rospy.spin()

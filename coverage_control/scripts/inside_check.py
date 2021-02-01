@@ -39,10 +39,12 @@ class Polygon:
 				point.y += _eps
 
 			if (point.y > B.y or point.y < A.y or point.x > max(A.x, B.x)):
+				print("[continued] P: ({}, {}) - E: ({}, {}) - ({}, {})".format(point.x, point.y, A.x, A.y, B.x, B.y))
 				continue
 
 			if point.x < min(A.x, B.x):
 				inside = not inside
+				print("[continued] P: ({}, {}) - E: ({}, {}) - ({}, {}) - IN: {}".format(point.x, point.y, A.x, A.y, B.x, B.y, inside))
 				continue
 
 			try:
@@ -62,8 +64,10 @@ class Polygon:
 		return inside
 
 if __name__ == '__main__':
-	boundary = [[-60., 0.], [0., 43.6], [60., 0.], [37.1, 70.5], [97.1, 114.1], [22.9, 114.1], 
-				[0., 184.7], [-24.6, 114.1], [-97.1, 114.1], [-37.6, 69.]]
+	# boundary = [[-60., 0.], [0., 43.6], [60., 0.], [37.1, 70.5], [97.1, 114.1], [22.9, 114.1], 
+	# 			[0., 184.7], [-24.6, 114.1], [-97.1, 114.1], [-37.6, 69.]]
+
+	boundary = [[0., 40.], [-40., 0.], [0., -40.], [40., 0.]]
 
 	# concave = Polygon([Point(-20., 100.),
 	# 				   Point(-80., 40.),
@@ -74,12 +78,17 @@ if __name__ == '__main__':
 
 	concave = Polygon([Point(v[0], v[1]) for v in boundary])
 
-	tp1 = Point(-73., 83)
-	tp2 = Point(-42., 24.)
-	tp3 = Point(14., -35.)
-	tp4 = Point(76., -43.)
+	# tp1 = Point(-73., 83)
+	# tp2 = Point(-42., 24.)
+	# tp3 = Point(14., -35.)
+	# tp4 = Point(76., -43.)
+
+	tp1 = Point(40., 4.)
+	# tp2 = Point(40., 10.)
+	# tp3 = Point(40., 1.)
+	# tp4 = Point(40., 20.)
 
 	print('Test Point 1 inside polygon? {}'.format(concave.contains(tp1)))
-	print('Test Point 2 inside polygon? {}'.format(concave.contains(tp2)))
-	print('Test Point 3 inside polygon? {}'.format(concave.contains(tp3)))
-	print('Test Point 4 inside polygon? {}'.format(concave.contains(tp4)))
+	# print('Test Point 2 inside polygon? {}'.format(concave.contains(tp2)))
+	# print('Test Point 3 inside polygon? {}'.format(concave.contains(tp3)))
+	# print('Test Point 4 inside polygon? {}'.format(concave.contains(tp4)))

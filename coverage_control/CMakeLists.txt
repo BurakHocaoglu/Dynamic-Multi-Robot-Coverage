@@ -31,6 +31,9 @@ add_message_files(
   FILES
   FlightState.msg
   FlightStateCompressed.msg
+  GridFlightState.msg
+  SensingInfo.msg
+  Grid.msg
   VCell.msg
 )
 
@@ -38,6 +41,8 @@ add_message_files(
 add_service_files(
   FILES
   KillAgent.srv
+  GetMap.srv
+  PrintMap.srv
 )
 
 ## Generate added messages and services with any dependencies listed here

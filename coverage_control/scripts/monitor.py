@@ -6,6 +6,8 @@ from utils import *
 
 import os
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
 
 from coverage_control.msg import FlightState, FlightStateCompressed, VCell, SensingInfo
@@ -20,6 +22,7 @@ class Monitor:
 		self.valid = False
 		self.flight_states = dict()
 		self.voronoi_cells = dict()
+		self.coverage_footprints = dict()
 		self.past_motions = dict()
 		self.uas_x_coords = None
 		self.uas_y_coords = None
@@ -33,6 +36,7 @@ class Monitor:
 		self.grid_drawer = None
 		self.grid_resolution = 1.
 		self.grid_offset = None
+		self.holes = dict()
 		self.setup()
 
 		self.flight_state_sub = rospy.Subscriber('/flight_states', FlightStateCompressed, self.flight_state_cb, queue_size=80)
@@ -41,7 +45,7 @@ class Monitor:
 		# self.collision_checker = rospy.Timer(rospy.Duration(1.0), self.check_collision)
 
 		self.figure = plt.figure()
-		self.axes = self.figure.add_subplot(1, 1, 1)
+		self.map_ax = self.figure.add_subplot(1, 1, 1)
 		self.animation_func = animation.FuncAnimation(self.figure, self.animate_movement, interval=100)
 
 	def flight_state_cb(self, msg):
@@ -51,35 +55,39 @@ class Monitor:
 
 			if self.flight_states.get(msg.id) is None:
 				self.flight_states[msg.id] = {'pos': np.array([msg.x, msg.y], dtype=float), 'vel': np.array([msg.vx, msg.vy], dtype=float)}
-				self.past_motions[msg.id] = [np.array([msg.x, msg.y], dtype=float)]
+				# self.past_motions[msg.id] = [np.array([msg.x, msg.y], dtype=float)]
+				self.past_motions[msg.id] = deque([np.array([msg.x, msg.y], dtype=float)])
 
 			else:
 				self.flight_states[msg.id]['pos'] = np.array([msg.x, msg.y], dtype=float)
 				self.flight_states[msg.id]['vel'] = np.array([msg.vx, msg.vy], dtype=float)
 
-				if len(self.past_motions[msg.id]) > 1:
-					curr_pos = np.array([msg.x, msg.y], dtype=float)
-					prev_pos = self.past_motions[msg.id][-1]
-					if np.linalg.norm(curr_pos - prev_pos) < 0.5:
-						self.past_motions[msg.id].append(curr_pos)
+				# if len(self.past_motions[msg.id]) > 1:
+				# 	curr_pos = np.array([msg.x, msg.y], dtype=float)
+				# 	prev_pos = self.past_motions[msg.id][-1]
+				# 	if np.linalg.norm(curr_pos - prev_pos) < 0.5:
+				# 		self.past_motions[msg.id].append(curr_pos)
 
-			# if self.grid_offset is not None:
-			# 	im_color = color_real_to_int(globals()['__COLORS'][msg.id + 1])
-			# 	print('im_color: {}'.format(im_color))
-			# 	grid_pos = real_to_grid((msg.x, msg.y), self.grid_offset, self.grid_resolution)
-			# 	print('elliptic: {}'.format((grid_pos[0], grid_pos[1], grid_pos[0] - 10, grid_pos[1] - 10)))
-			# 	self.grid_drawer.ellipse((grid_pos[0], grid_pos[1], grid_pos[0] - 10, grid_pos[1] - 10), fill=im_color, outline=im_color)
+				self.past_motions[msg.id].append(np.array([msg.x, msg.y], dtype=float))
 
 		except Exception as e:
 			print(traceback.format_exc())
 
 	def sensing_info_cb(self, msg):
 		if self.grid_offset is not None:
-			im_color = color_real_to_int(globals()['__COLORS'][int(msg.data) + 1])
-			# grid_pos = real_to_grid((msg.x, msg.y), self.grid_offset, self.grid_resolution)
-			self.grid_drawer.ellipse((msg.grid_x - 5, msg.grid_y - 5, msg.grid_x + 5, msg.grid_y + 5), fill=im_color, outline=im_color)
-			# self.grid_drawer.point((msg.grid_x, msg.grid_y), fill=im_color)
-			# self.grid_drawer.point((msg.grid_y, msg.grid_x), fill=im_color)
+			# im_color = color_real_to_int(globals()['__COLORS'][int(msg.data) + 1])
+			# self.grid_drawer.ellipse((msg.grid_x - 5, msg.grid_y - 5, msg.grid_x + 5, msg.grid_y + 5), fill=im_color, outline=im_color)
+
+			if self.coverage_footprints.get(int(msg.data)) is None:
+				self.coverage_footprints[int(msg.data)] = []
+
+			if len(self.coverage_footprints[int(msg.data)]) > 0:
+				last = self.coverage_footprints[int(msg.data)][-1]
+				if msg.x != last[0] or msg.y != last[1]:
+					self.coverage_footprints[int(msg.data)].append((msg.x, msg.y, msg.footprint_size))
+
+			else:
+				self.coverage_footprints[int(msg.data)].append((msg.x, msg.y, msg.footprint_size))
 
 	def voronoi_cell_cb(self, msg):
 		try:
@@ -91,10 +99,6 @@ class Monitor:
 			self.voronoi_cells[msg.id] = cell
 		except Exception as e:
 			print(traceback.format_exc())
-
-		# rospy.loginfo('Monitor detected UAS {0} at cell:'.format(msg.id))
-		# for vertex in cell:
-		# 	print('\t{}'.format(vertex))
 
 	def check_collision(self, event):
 		if not self.valid:
@@ -115,13 +119,18 @@ class Monitor:
 					rospy.logerr("Collision between (agent %d) and (agent %d)" % (i + 1, j + 1))
 
 	def animate_movement(self, i):
-		self.axes.clear()
-		self.axes.set_xlim(self.args['xlim'][0] - 5, self.args['xlim'][1] + 5)
-		self.axes.set_ylim(self.args['ylim'][0] - 5, self.args['ylim'][1] + 5)
-		self.axes.set_aspect('equal')
+		self.map_ax.clear()
+		self.map_ax.set_xlim(self.args['xlim'][0] - 5, self.args['xlim'][1] + 5)
+		self.map_ax.set_ylim(self.args['ylim'][0] - 5, self.args['ylim'][1] + 5)
+		self.map_ax.set_title('Coverage Map')
+		self.map_ax.set_aspect('equal')
 
 		if self.arena is not None:
-			self.axes.add_patch(self.arena)
+			self.map_ax.add_patch(self.arena)
+
+		# if len(self.holes):
+		# 	for hn, hv in self.holes.items():
+		# 		self.map_ax.add_patch(plt.Polygon(hv, alpha=0.2, color=(0.99, 0., 0.)))
 
 		if not self.valid:
 			return
@@ -130,16 +139,25 @@ class Monitor:
 			pos, vel = ufs['pos'], ufs['vel']
 			heading = np.arctan2(vel[1], vel[0])
 			robot_color = globals()['__COLORS'][uid + 1]
-			self.axes.quiver(pos[0], pos[1], np.cos(heading), np.sin(heading), color=robot_color)
-			self.axes.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
-			self.axes.plot(self.past_motions[uid], color=robot_color)
+			self.map_ax.quiver(pos[0], pos[1], np.cos(heading), np.sin(heading), color=robot_color)
+			self.map_ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
+			x_hist, y_hist = zip(*self.past_motions[uid])
+			self.map_ax.plot(x_hist, y_hist, color=robot_color)
+
+			# footprints = self.coverage_footprints.get(uid)
+			# if footprints is not None and len(footprints) > 0:
+			# 	for pos in footprints:
+			# 		self.map_ax.add_artist(patches.Rectangle((pos[0] - self.grid_resolution * 2 * pos[2], 
+			# 												  pos[1] - self.grid_resolution * 2 * pos[2]), 
+			# 												  2 * pos[2] / self.grid_resolution, 
+			# 												  2 * pos[2] / self.grid_resolution, 
+			# 												  color=robot_color, 
+			# 												  fill=True, 
+			# 												  alpha=0.4))
 
 			robot_cell = self.voronoi_cells.get(uid)
 			if robot_cell is not None and len(robot_cell) > 2:
-				# robot_cell.append(robot_cell[0])
-				# cell_xcoords, cell_ycoords = zip(*robot_cell)
-				# self.axes.plot(cell_xcoords, cell_ycoords, color=robot_color)
-				self.axes.add_patch(plt.Polygon(robot_cell, alpha=0.4, color=robot_color))
+				self.map_ax.add_patch(plt.Polygon(robot_cell, alpha=0.2, color=robot_color))
 
 	def setup(self):
 		try:
@@ -163,16 +181,19 @@ class Monitor:
 				rospy.loginfo('Monitor has set space limits from X({0}) to Y({1}).'.format(self.args['xlim'], self.args['ylim']))
 
 				self.args['boundary'] = _boundary
-				sorted_boundary = angular_sort(np.mean(self.args['boundary'], axis=0), self.args['boundary'])
-				self.arena = plt.Polygon(sorted_boundary, color=(0, 0, 0), fill=False)
+				# sorted_boundary = angular_sort(np.mean(self.args['boundary'], axis=0), self.args['boundary'])
+				# self.arena = plt.Polygon(sorted_boundary, color=(0, 0, 0), fill=False)
+				self.arena = plt.Polygon(self.args['boundary'], color=(0, 0, 0), fill=False)
+
 				rospy.loginfo('Monitor will observe the arena of:')
 				for v in self.args['boundary']:
 					print('\t{}'.format(v))
 
 				# retrieve obstacles here
 				# self.map_manager = MapManager("coverage_map", _boundary)
-				self.grid_resolution = rospy.get_param('/grid_res', 1.)
-				self.grid_map = create_map(sorted_boundary, self.grid_resolution, dict())
+				self.grid_resolution = 1. / rospy.get_param('/grid_res', 1.)
+				# self.grid_map = create_map(sorted_boundary, self.grid_resolution, dict())
+				self.grid_map = create_map(self.args['boundary'], self.grid_resolution, dict())
 				self.grid_dims = self.grid_map.shape
 				self.grid_image = Image.new('RGB', (self.grid_dims[0] + 5, self.grid_dims[0] + 5), (255, 255, 255))
 				self.grid_drawer = ImageDraw.Draw(self.grid_image)
@@ -180,17 +201,30 @@ class Monitor:
 
 				sorted_grid_coords = []
 				print('Image pixel coordinates:')
-				for v in sorted_boundary:
+				# for v in sorted_boundary:
+				for v in self.args['boundary']:
 					grid_coord = tuple(real_to_grid(v, self.grid_offset, self.grid_resolution))
 					print('\t{} -> {}'.format(v, grid_coord))
 					sorted_grid_coords.append(grid_coord)
 
 				self.grid_drawer.polygon(sorted_grid_coords, outline=(0, 0, 0))
 
+			obstacles = rospy.get_param('/obstacles', dict())
+			if len(obstacles) == 0:
+				rospy.loginfo('Environment does not have any obstacles / holes.')
+
+			else:
+				for hn, hv in obstacles.items():
+					print('Hole {}'.format(hn))
+					self.holes[hn] = [np.array(v, dtype=float) for v in hv]
+
+					for v in hv:
+						print('\t{}'.format(v))
+
 			logdir_prefix = rospy.get_param('/logdir_prefix', None)
 			if logdir_prefix is None:
 				cwd = os.getcwd()
-				rospy.logwarn('UAS {0} could not find: logdir_prefix! Setting to default {1}.'.format(self.uid, cwd))
+				rospy.logwarn('Monitor could not find: logdir_prefix! Setting to default {1}.'.format(cwd))
 				logdir_prefix = cwd
 
 			else:

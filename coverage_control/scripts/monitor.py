@@ -128,9 +128,9 @@ class Monitor:
 		if self.arena is not None:
 			self.map_ax.add_patch(self.arena)
 
-		# if len(self.holes):
-		# 	for hn, hv in self.holes.items():
-		# 		self.map_ax.add_patch(plt.Polygon(hv, alpha=0.2, color=(0.99, 0., 0.)))
+		if len(self.holes):
+			for hn, hv in self.holes.items():
+				self.map_ax.add_patch(plt.Polygon(hv, alpha=0.2, color=(0., 0., 0.)))
 
 		if not self.valid:
 			return

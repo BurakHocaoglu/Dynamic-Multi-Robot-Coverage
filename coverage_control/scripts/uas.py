@@ -137,7 +137,6 @@ class UAS:
 						segments.append((normal, middle, "H_{}_{}_{}".format(hn, i, j)))
 						self.holes[hn].append(hv[i])
 
-					# self.holes[hn] = segments
 					self.hole_segments.extend(segments)
 
 			rate = rospy.get_param('/rate', None)
@@ -388,7 +387,8 @@ class UAS:
 						print(traceback.format_exc())
 						continue
 
-					inside_check = is_inside_polygon(self.boundary_vertices, p)
+					# inside_check = is_inside_polygon(self.boundary_vertices, p)
+					inside_check = is_point_valid(self.boundary_vertices, p, self.holes)
 					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
 
 					if inside_check and feasibility_check:
@@ -437,40 +437,60 @@ class UAS:
 
 			####################################################################################
 			# Voronoi Bisectors vs. Hole Segments ##############################################
-			# for i in range(len(vbisectors)):
-			# 	n_i, m_i, vb_name = vbisectors[i]
-			# 	d_i = m_i.dot(n_i)
+			for i in range(len(vbisectors)):
+				n_i, m_i, vb_name = vbisectors[i]
+				d_i = m_i.dot(n_i)
 
-			# 	for j in range(len(self.hole_segments)):
-			# 		n_j, m_j, h_name = self.hole_segments[j]
-			# 		d_j = m_j.dot(n_j)
+				for j in range(len(self.hole_segments)):
+					n_j, m_j, h_name = self.hole_segments[j]
+					d_j = m_j.dot(n_j)
 
-			# 		try:
-			# 			A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
-			# 			b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
-			# 			p = np.linalg.solve(A_, b_).round(2)
+					try:
+						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
+						b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
+						p = np.linalg.solve(A_, b_).round(2)
 
-			# 		except np.linalg.LinAlgError:
-			# 			continue
+					except np.linalg.LinAlgError:
+						continue
 
-			# 		except:
-			# 			print(traceback.format_exc())
-			# 			continue
+					except:
+						print(traceback.format_exc())
+						continue
 
 
-			# 		hole_name_parsed = h_name.split('_')
-			# 		hole_seg_start, hole_seg_end = (self.holes[hole_name_parsed[1]][int(hole_name_parsed[2])], 
-			# 										self.holes[hole_name_parsed[1]][int(hole_name_parsed[3])])
+					hole_name_parsed = h_name.split('_')
+					hole_seg_start, hole_seg_end = (self.holes[hole_name_parsed[1]][int(hole_name_parsed[2])], 
+													self.holes[hole_name_parsed[1]][int(hole_name_parsed[3])])
 
-			# 		inside_check = onSegment(hole_seg_start, p, hole_seg_end)
-			# 		feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
+					inside_check = onSegment(hole_seg_start, p, hole_seg_end)
+					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
 
-			# 		if inside_check and feasibility_check:
-			# 			cell_graph.add_edge(vb_name, h_name, VEdge("P_{}_{}".format(vb_name, h_name), p))
-			# 			self.logger.write('\t- {} X {} = {} - Success!\n'.format(vb_name, h_name, p))
+					if inside_check and feasibility_check:
+						cell_graph.add_edge(vb_name, h_name, VEdge("P_{}_{}".format(vb_name, h_name), p))
+						self.logger.write('\t- {} X {} = {} - Success!\n'.format(vb_name, h_name, p))
 
-			# 		else:
-			# 			self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, h_name, p, inside_check, feasibility_check))
+					else:
+						self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, h_name, p, inside_check, feasibility_check))
+			####################################################################################
+
+
+			####################################################################################
+			# Voronoi Bisectors vs. Hole Vertices ##############################################
+			for hn, hv in self.holes.items():
+				for i in range(len(hv)):
+					j = (i + 1) % len(hv)
+					k = (i - 1 + len(hv)) % len(hv)
+
+					v = hv[i]
+					feasibility, diff = self.check_feasibility(A_cell, b_cell, v)
+
+					if feasibility:
+						first, second = "H_{}_{}_{}".format(hn, k, i), "H_{}_{}_{}".format(hn, i, j)
+						cell_graph.add_edge(first, second, VEdge("HBND_{}".format(i), v))
+						self.logger.write('\t- {} X {} = {} - Success!\n'.format(first, second, v))
+
+					else:
+						self.logger.write('\t- Hole {} vertex {} - Failure! ||| INFEASIBLE, diff: {}\n'.format(hn, v, diff))
 			####################################################################################
 
 

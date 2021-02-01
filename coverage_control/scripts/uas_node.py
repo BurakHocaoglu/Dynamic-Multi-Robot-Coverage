@@ -37,6 +37,8 @@ if __name__ == '__main__':
 				v_step = uas.solve_step2()
 
 			uas.execute_step(v_step)
+			
+			# rospy.loginfo("UAS {} - Remaining time: {} secs.".format(uid, rate.remaining().secs))
 
 		rate.sleep()
 

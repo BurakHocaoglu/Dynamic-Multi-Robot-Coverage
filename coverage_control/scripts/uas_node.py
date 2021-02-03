@@ -20,21 +20,26 @@ if __name__ == '__main__':
 			v_step = np.zeros(2)
 
 			if is_voronoi:
-				if uas.coverage_state == 0:
-					if not uas.all_converged():
-						# A_iq, b_iq = uas.compute_bisectors()
-						A_iq, b_iq = uas.compute_bisectors2()
-						v_step = uas.solve_step()
+				# if uas.coverage_state == 0:
+				# 	if not uas.all_converged():
+				# 		# A_iq, b_iq = uas.compute_bisectors()
+				# 		A_iq, b_iq = uas.compute_bisectors2()
+				# 		v_step = uas.solve_step()
 
-					else:
-						uas.coverage_state = 1
-						A_cell_converged, b_cell_converged = uas.compute_voronoi_constraints()
+				# 	else:
+				# 		print("UAS {} has converged! Transitioning phase 2...".format(uid))
 
-				elif uas.coverage_state == 1:
-					v_step = uas.solve_step3(A_cell_converged, b_cell_converged)
+				# 		uas.coverage_state = 1
+				# 		A_cell_converged, b_cell_converged = uas.compute_voronoi_constraints()
+
+				# elif uas.coverage_state == 1:
+				# 	v_step = uas.solve_step3(A_cell_converged, b_cell_converged)
+
+				A_iq, b_iq = uas.compute_bisectors2()
+				v_step = uas.solve_step_by_force()
 
 			else:
-				v_step = uas.solve_step2()
+				v_step = uas.solve_step3()
 
 			uas.execute_step(v_step)
 			

@@ -198,6 +198,49 @@ class UAS:
 
 		self.voronoi_cell_pub.publish(VCell(self.uid, 2, vcell_data))
 
+	def compute_peer_repulsion(self):
+		force = np.zeros(2)
+
+		alpha = 3.0
+		eps = 8.0
+		sigma = 12.0
+
+		for _, fs in self.nb_states.items():
+			repulsion = fs['pos'] - self.position
+			magnitude = np.linalg.norm(repulsion)
+
+			# if magnitude >= 15.:
+			# 	continue
+
+			repulsion /= magnitude
+			multiplier = - eps * (2 * (sigma ** 4) / (magnitude ** 5) - (sigma ** 2) / (magnitude ** 3))
+			force += alpha * multiplier * repulsion
+
+		return force
+
+	def compute_goal_attraction(self):
+		gamma = 8.0
+
+		force = self.goal - self.position
+		magnitude = np.linalg.norm(force)
+		force /= magnitude
+
+		return gamma * force
+
+	def compute_boundary_respulsion(self):
+		force = np.zeros(2)
+
+		pass
+
+		return force
+
+	def compute_obstacle_repulsion(self):
+		force = np.zeros(2)
+
+		pass
+
+		return force
+
 	def dump_bisectors(self, bisectors, end=False, after=0):
 		self.logger.write('UAS {} - Bisectors:\n'.format(self.uid))
 		i = 0
@@ -536,11 +579,11 @@ class UAS:
 		if change < 0.1:
 			self.converged_count += 1
 
+		# else:
+		# 	self.converged_count = 0
+
 		if self.converged_count >= 25:
 			self.converged = True
-
-			if self.coverage_state == 0:
-				print("UAS {} has converged! Transitioning to complete coverage phase...".format(self.uid))
 
 		else:
 			self.converged = False
@@ -676,7 +719,7 @@ class UAS:
 
 				feasibility, diff = self.check_feasibility(A_cell, b_cell, cand_real_pos)
 				is_unexplored = (self.local_grid_map[cand_grid_pos] == -1)
-				is_inside = is_point_valid(self.boundary_vertices, cand_real_pos)
+				is_inside = is_point_valid(self.boundary_vertices, cand_real_pos, self.holes)
 
 				self.logger.write("\t Candidate: ({:.3f}, {:.3f}) - IN: {}, FSB: {}\n".format(cand_real_pos[0], cand_real_pos[1], is_inside, feasibility))
 
@@ -691,10 +734,10 @@ class UAS:
 					# Right biased
 					# guidance_vector = np.array([np.cos(self.heading - np.pi / 2.), np.sin(self.heading - np.pi / 2.)], dtype=float)
 
-					# gain = info_gain(self.local_grid_map, cand_grid_pos)
+					gain = info_gain(self.local_grid_map, cand_grid_pos)
 					# value = goal_vector.dot(heading_vector) - self.local_grid_map[cand_grid_pos] + a[2]
-					# value = goal_vector.dot(heading_vector) + gain + a[2] + int(is_unexplored) * 1000
-					value = goal_vector.dot(guidance_vector) + int(is_unexplored) * 1000
+					value = goal_vector.dot(heading_vector) + gain + a[2] + int(is_unexplored) * 1000
+					# value = goal_vector.dot(guidance_vector) + int(is_unexplored) * 1000
 					# value = gain + a[2] + int(is_unexplored) * 1000
 					# value = goal_vector.dot(heading_vector) + a[2]
 					# value = goal_vector[0] * np.cos(self.heading) + goal_vector[1] * np.sin(self.heading) + a[2]
@@ -729,6 +772,19 @@ class UAS:
 			print(traceback.format_exc())
 			return np.zeros(2)
 
+	def solve_step_by_force(self):
+		exerted_force = np.zeros(2)
+		exerted_force += self.compute_peer_repulsion()
+		# exerted_force += self.compute_goal_attraction()
+		# exerted_force += self.compute_boundary_respulsion()
+		# exerted_force += self.compute_obstacle_repulsion()
+
+		magnitude = np.linalg.norm(exerted_force)
+		if magnitude > self.args['vmax']:
+			exerted_force *= self.args['vmax'] / magnitude
+
+		return exerted_force
+
 	def vel_pub(self):
 		vel_cmd = Twist()
 		vel_cmd.linear.x = self.velocity[0]
@@ -739,7 +795,7 @@ class UAS:
 		prev_grid_pos = real_to_grid(self.position, self.grid_offset, self.grid_resolution)
 
 		next_position = self.position + v_next / self.args['rate']
-		if is_point_valid(self.boundary_vertices, next_position):
+		if is_point_valid(self.boundary_vertices, next_position, self.holes):
 			self.position = next_position
 
 		else:

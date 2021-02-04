@@ -43,6 +43,7 @@ add_service_files(
   KillAgent.srv
   GetMap.srv
   PrintMap.srv
+  SetInitPos.srv
 )
 
 ## Generate added messages and services with any dependencies listed here

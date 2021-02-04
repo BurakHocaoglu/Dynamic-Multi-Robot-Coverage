@@ -6,6 +6,8 @@ from utils import *
 from cvxopt import matrix, solvers
 from coverage_control.msg import FlightState, FlightStateCompressed, VCell, SensingInfo
 
+from coverage_control.srv import SetInitPos
+
 class UAS:
 
 	def __init__(self, uid):
@@ -35,6 +37,8 @@ class UAS:
 		self.converged_count = 0
 		self.converged = False
 
+		# self.local_start_event = threading.Event()
+
 		self.setup()
 
 		self.frontier = dict()
@@ -47,6 +51,16 @@ class UAS:
 		self.flight_state_pub = rospy.Publisher('/flight_states', FlightStateCompressed, queue_size=1)
 		self.voronoi_cell_pub = rospy.Publisher('/voronoi_cells', VCell, queue_size=1)
 		self.sense_info_pub = rospy.Publisher('/sensing_info', SensingInfo, queue_size=1)
+
+		self.set_init_pos_srv = rospy.Service('/uas{}/set_init_pos'.format(self.uid), SetInitPos, self.handle_set_init_pos)
+
+	def handle_set_init_pos(self, req):
+		try:
+			self.position = np.array([req.x, req.y], dtype=float)
+			return True
+		except Exception as e:
+			print(traceback.format_exc())
+			return False
 
 	def flight_state_cb(self, msg):
 		if msg.id == self.uid:

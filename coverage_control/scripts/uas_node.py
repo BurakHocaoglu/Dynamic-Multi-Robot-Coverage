@@ -16,7 +16,7 @@ if __name__ == '__main__':
 	while not rospy.is_shutdown():
 		uas.broadcast_state()
 
-		if time.time() - instance_after_init > 5.:
+		if time.time() - instance_after_init > 10.:
 			v_step = np.zeros(2)
 
 			if is_voronoi:

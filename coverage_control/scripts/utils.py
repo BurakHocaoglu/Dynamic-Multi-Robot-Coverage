@@ -8,6 +8,7 @@ import time
 import rospy
 import datetime
 import traceback
+import threading
 import numpy as np
 
 from enum import Enum
@@ -18,35 +19,6 @@ from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import Odometry
 from mavros_msgs.msg import State
 from mavros_msgs.srv import StreamRate, SetMode, CommandBool, CommandTOL
-
-# class ItemNotImplementedError(Exception):
-
-# 	def __init__(self, value=""):
-# 		self.value = "{} not implemented!".format(value)
-
-# 	def __str__(self):
-# 		return repr(self.value)
-
-# class ConstraintType(Enum):
-# 	"""
-# 	LINE constraint is composed of:
-# 	* Normal vector
-# 	* A point that the line passes through
-# 	"""
-# 	LINE=1
-
-# 	"""
-# 	LINE_SEGMENT constraint is composed of:
-# 	"""
-# 	LINE_SEGMENT=2
-
-# 	"""
-# 	"""
-# 	CIRCLE=3
-
-# 	"""
-# 	"""
-# 	FUNCTION=4
 
 def is_in_space(xlims, ylims, p, tol):
 	return (xlims[0] - tol <= p[0] <= xlims[1] + tol and

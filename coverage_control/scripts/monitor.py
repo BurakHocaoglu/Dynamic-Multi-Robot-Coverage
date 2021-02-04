@@ -11,6 +11,8 @@ import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
 
 from coverage_control.msg import FlightState, FlightStateCompressed, VCell, SensingInfo
+
+from coverage_control.srv import SetInitPos
 # from coverage_control.msg import FlightState, VCell
 
 __COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0.99,0), (0.99,0,0.99),
@@ -118,6 +120,34 @@ class Monitor:
 				if j < i and pairwise_dists[i, j] <= 2.0:
 					rospy.logerr("Collision between (agent %d) and (agent %d)" % (i + 1, j + 1))
 
+	def set_random_positions(self):
+		valid_samples, i = [], 0
+		low_limit = [self.args['xlim'][0] + 1., self.args['ylim'][0] + 1.]
+		high_limit = [self.args['xlim'][1] - 1., self.args['ylim'][1] - 1.]
+
+		while i < self.args['uas_count']:
+			p = np.random.uniform(low_limit, high_limit, (2,))
+
+			if is_point_valid(self.args['boundary'], p, self.args['obstacles']):
+				valid = True
+
+				for sample in valid_samples:
+					if np.linalg.norm(p - sample) <= 2.:
+						valid = False
+						break
+
+				if valid:
+					proxy = rospy.ServiceProxy('/uas{}/set_init_pos'.format(i), SetInitPos)
+					proxy.wait_for_service()
+					result = proxy(p[0], p[1])
+
+					if result.success:
+						valid_samples.append(p)
+						i += 1
+
+					else:
+						rospy.logwarn("Failed to set UAS {} to a random position!".format(i))
+
 	def animate_movement(self, i):
 		self.map_ax.clear()
 		self.map_ax.set_xlim(self.args['xlim'][0] - 5, self.args['xlim'][1] + 5)
@@ -214,6 +244,8 @@ class Monitor:
 				rospy.loginfo('Environment does not have any obstacles / holes.')
 
 			else:
+				self.args['obstacles'] = obstacles
+
 				for hn, hv in obstacles.items():
 					print('Hole {}'.format(hn))
 					self.holes[hn] = [np.array(v, dtype=float) for v in hv]
@@ -239,6 +271,8 @@ class Monitor:
 				os.makedirs(logdir)
 
 			self.grid_image_file = logdir + '/coverage_map.png'
+
+			self.set_random_positions()
 
 		except Exception as e:
 			print(traceback.format_exc())

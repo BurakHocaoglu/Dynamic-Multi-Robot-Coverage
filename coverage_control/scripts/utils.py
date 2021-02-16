@@ -52,12 +52,17 @@ def check_angle_integrity(vertices, reference):
 
 	return True
 
+def get_area(polygon):
+	area = 0
+	for i in range(len(polygon) - 1):
+		x_i, y_i = polygon[i]
+		x_j, y_j = polygon[i + 1]
+		area += x_i * y_j - x_j * y_i
+
+	return area * 0.5
+
 def get_centroid(polygon, uid):
 	### SOURCE: https://en.wikipedia.org/wiki/Centroid
-
-	# rospy.loginfo('UAS {} called get_centroid with:'.format(uid))
-	# for v in polygon:
-	# 	print('\t{}'.format(v))
 
 	# Calculate area with Shoelace Formula
 	area = 0
@@ -268,11 +273,14 @@ def is_inside_polygon(points, p):
 	xmax, xmin = max(xs), min(xs)
 	ymax, ymin = max(ys), min(ys)
 
-	if p[0] == 0:
-		return ymin <= p[1] <= ymax
+	# if p[0] == 0:
+	# 	return ymin <= p[1] <= ymax
 
-	if p[1] == 0:
-		return xmin <= p[0] <= xmax
+	# if p[1] == 0:
+	# 	return xmin <= p[0] <= xmax
+
+	if not ((xmin <= p[0] <= xmax) and (ymin <= p[1] <= ymax)):
+		return False
 
 	extreme = (1e4, p[1])
 	count = i = 0
@@ -302,6 +310,12 @@ def is_point_valid(bVertices, p, hVertices=None):
 	return is_inside_polygon(bVertices, p)
 
 class VEdge:
+
+	def __init__(self, name, point):
+		self.name = name
+		self.point = point
+
+class VNode:
 
 	def __init__(self, name, point):
 		self.name = name
@@ -344,7 +358,8 @@ class VGraph:
 			edge, vnode = stack.pop()
 
 			if edge is not None or visited.get(vnode):
-				traversal.append(edge.point)
+				# traversal.append(edge.point)
+				traversal.append(edge)
 
 			for _, conn in self.nodes[vnode].items():
 				if visited.get(conn[1]) is None:
@@ -352,4 +367,80 @@ class VGraph:
 
 			visited[vnode] = True
 
-		return traversal
+		geometric_visited = dict()
+		geo_traversal = []
+
+		for e in traversal:
+			e_visited = False
+
+			for e_name, edge in geometric_visited.items():
+				if np.linalg.norm(np.array(e.point) - np.array(edge.point)) <= 0.5:
+					e_visited = True
+					break
+
+			if not e_visited:
+				geometric_visited[e.name] = e
+				geo_traversal.append(np.array(e.point))
+
+		return geo_traversal
+
+class DVGraph:
+
+	def __init__(self):
+		self.nodes = dict()
+		self.node_list = dict()
+
+	def add_edge(self, v1, v2):
+		if self.nodes.get(v1.name) is None:
+			self.nodes[v1.name] = dict()
+			self.node_list[v1.name] = v1
+
+		if self.nodes.get(v2.name) is None:
+			self.nodes[v2.name] = dict()
+			self.node_list[v2.name] = v2
+
+		# for nb, _ in self.nodes[v1].items():
+		# 	if nb == v2:
+		# 		return
+
+		if self.nodes[v1.name].get(v2.name) is not None:
+			return
+
+		self.nodes[v1.name][v2.name] = v2
+
+	def traverse(self):
+		if len(self.nodes) < 3:
+			return []
+
+		traversal = []
+		stack = deque()
+		start = self.node_list.keys()[0]
+		stack.append(self.node_list[start])
+		visited = dict()
+
+		while len(stack) > 0:
+			vnode = stack.pop()
+			traversal.append(vnode)
+
+			for nb, nbnode in self.nodes[vnode.name].items():
+				if visited.get(nb) is None:
+					stack.append(nbnode)
+
+			visited[vnode.name] = True
+
+		geometric_visited = dict()
+		geo_traversal = []
+
+		for v in traversal:
+			v_visited = False
+
+			for _, vnode in geometric_visited.items():
+				if np.linalg.norm(np.array(v.point) - np.array(vnode.point)) <= 0.5:
+					v_visited = True
+					break
+
+			if not v_visited:
+				geometric_visited[v.name] = v
+				geo_traversal.append(np.array(v.point))
+
+		return geo_traversal

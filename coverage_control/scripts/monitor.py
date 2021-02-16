@@ -183,7 +183,7 @@ class Monitor:
 			# 												  2 * pos[2] / self.grid_resolution, 
 			# 												  color=robot_color, 
 			# 												  fill=True, 
-			# 												  alpha=0.4))
+			# 												  alpha=0.25))
 
 			robot_cell = self.voronoi_cells.get(uid)
 			if robot_cell is not None and len(robot_cell) > 2:
@@ -242,6 +242,7 @@ class Monitor:
 			obstacles = rospy.get_param('/obstacles', dict())
 			if len(obstacles) == 0:
 				rospy.loginfo('Environment does not have any obstacles / holes.')
+				self.args['obstacles'] = dict()
 
 			else:
 				self.args['obstacles'] = obstacles

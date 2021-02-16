@@ -37,8 +37,6 @@ class UAS:
 		self.converged_count = 0
 		self.converged = False
 
-		# self.local_start_event = threading.Event()
-
 		self.setup()
 
 		self.frontier = dict()
@@ -76,16 +74,17 @@ class UAS:
 			self.nb_states[msg.id]['vel'] = np.array([msg.vx, msg.vy], dtype=float)
 			self.nb_states[msg.id]['end'] = msg.converged
 
-		nb_grid_pos = real_to_grid((msg.x, msg.y), self.grid_offset, self.grid_resolution)
-		if self.local_grid_map is not None:
-			self.local_grid_map[nb_grid_pos] = msg.id
+		if self.coverage_state == 2:
+			nb_grid_pos = real_to_grid((msg.x, msg.y), self.grid_offset, self.grid_resolution)
+			if self.local_grid_map is not None:
+				self.local_grid_map[nb_grid_pos] = msg.id
 
 	def all_converged(self):
 		for _, st in self.nb_states.items():
 			if not st['end']:
 				return False
 
-		return True
+		return self.converged
 
 	def setup(self):
 		try:
@@ -118,7 +117,7 @@ class UAS:
 					direction = sorted_boundary[j] - sorted_boundary[i]
 
 					normal = np.array([-direction[1], direction[0]], dtype=float)
-					normal *= np.linalg.norm(normal)
+					normal /= np.linalg.norm(normal)
 					self.boundary.append((normal, middle, "B_{}{}".format(i, j)))
 
 				self.grid_resolution = 1. / rospy.get_param('/grid_res', 1.)
@@ -136,7 +135,7 @@ class UAS:
 			if len(obstacles):
 				for hn, hv in obstacles.items():
 					segments = []
-					self.holes[hn] = []
+					self.holes[hn] = np.array(hv, dtype=float)
 
 					hv = np.array(hv, dtype=float)
 
@@ -147,9 +146,9 @@ class UAS:
 						direction = hv[j] - hv[i]
 
 						normal = np.array([-direction[1], direction[0]], dtype=float)
-						normal *= np.linalg.norm(normal)
+						normal /= np.linalg.norm(normal)
 						segments.append((normal, middle, "H_{}_{}_{}".format(hn, i, j)))
-						self.holes[hn].append(hv[i])
+						# self.holes[hn].append(hv[i])
 
 					self.hole_segments.extend(segments)
 
@@ -200,7 +199,13 @@ class UAS:
 			rospy.loginfo('UAS {} has been setup.'.format(self.uid))
 
 	def broadcast_state(self):
-		self.flight_state_pub.publish(FlightStateCompressed(self.uid, self.position[0], self.position[1], self.velocity[0], self.velocity[1], self.converged))
+		self.flight_state_pub.publish(FlightStateCompressed(self.uid, 
+															self.position[0], 
+															self.position[1], 
+															self.velocity[0], 
+															self.velocity[1], 
+															self.converged))
+
 		# self.sense_info_pub.publish(SensingInfo(self.position[0], self.position[1], self.grid_pos[0], self.grid_pos[1], self.uid))
 
 	def broadcast_cell(self):
@@ -211,6 +216,63 @@ class UAS:
 		vcell_data.extend(list(self.voronoi_cell[0]))
 
 		self.voronoi_cell_pub.publish(VCell(self.uid, 2, vcell_data))
+
+	def compute_peer_repulsion(self):
+		force = np.zeros(2)
+
+		alpha = 3.0
+		eps = 8.0
+		sigma = 12.0
+
+		for _, fs in self.nb_states.items():
+			repulsion = fs['pos'] - self.position
+			magnitude = np.linalg.norm(repulsion)
+
+			# if magnitude >= 15.:
+			# 	continue
+
+			repulsion /= magnitude
+			multiplier = - eps * (2 * (sigma ** 4) / (magnitude ** 5) - (sigma ** 2) / (magnitude ** 3))
+			force += alpha * multiplier * repulsion
+
+		return force
+
+	def compute_goal(self):
+		if len(self.voronoi_cell) >= 3:
+			self.voronoi_cell.append(self.voronoi_cell[0])
+			centroid = get_centroid(self.voronoi_cell, self.uid)
+			self.set_goal(centroid)
+
+	def compute_goal_attraction(self):
+		gamma = 8.0
+
+		force = self.goal - self.position
+		magnitude = np.linalg.norm(force)
+		force /= magnitude
+
+		return gamma * force
+
+	def compute_boundary_respulsion(self):
+		force = np.zeros(2)
+
+		for bseg in self.boundary:
+			seg_n, seg_p, _ = bseg
+
+			if np.all(seg_n.dot(self.position) <= seg_n.dot(seg_p) + 0.1):
+				force += np.dot(seg_p - self.position, seg_n) * 1.5
+
+		return force
+
+	def compute_obstacle_repulsion(self):
+		force = np.zeros(2)
+
+		for hseg in self.hole_segments:
+			seg_n, seg_p, _ = hseg
+
+			if np.all(seg_n.dot(self.position) <= seg_n.dot(seg_p) + 0.1):
+				force += np.dot(self.position - seg_p, seg_n)
+
+		return force
 
 	def dump_bisectors(self, bisectors, end=False, after=0):
 		self.logger.write('UAS {} - Bisectors:\n'.format(self.uid))
@@ -268,96 +330,6 @@ class UAS:
 
 	def compute_bisectors(self):
 		try:
-			bisectors, vbisectors = [], []
-			constraints, values = [], []
-			tol = 0.1
-
-			bisectors.extend(self.boundary)
-			self.dump_bisectors(bisectors)
-
-			for nbid, fs in self.nb_states.items():
-				normal = (fs['pos'] - self.position).round(2)
-				middle = ((fs['pos'] + self.position) * 0.5).round(2)
-				constraints.append(normal)
-				values.append((middle.dot(normal)).round(2))
-				bisectors.append((normal, middle, "D_{}{}".format(self.uid, nbid)))
-				vbisectors.append((normal, middle, "D_{}{}".format(self.uid, nbid)))
-
-			# self.dump_nb_states()
-			self.dump_bisectors(bisectors, end=True, after=len(self.boundary))
-
-			A_cell = np.array(constraints, dtype=float)
-			b_cell = np.array(values, dtype=float)
-			self.voronoi_cell = []
-			cell_graph = VGraph()
-
-			self.logger.write('UAS {} - Voronoi Construction:\n'.format(self.uid))
-			for i in range(len(vbisectors)):
-				n_i, m_i, vb_name = vbisectors[i]
-				d_i = m_i.dot(n_i)
-
-				for j in range(len(bisectors)):
-					n_j, m_j, b_name = bisectors[j]
-					d_j = m_j.dot(n_j)
-
-					if np.arctan2(n_i[1], n_i[0]) == np.arctan2(n_j[1], n_j[0]):
-						continue
-
-					try:
-						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
-						b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
-						p = np.linalg.solve(A_, b_).round(2)
-
-					except np.linalg.LinAlgError:
-						continue
-
-					except:
-						print(traceback.format_exc())
-						continue
-
-					inside_check = is_inside_polygon(self.boundary_vertices, p)
-					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
-					if inside_check and feasibility_check:
-						cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
-						self.logger.write('\t- {} X {} = {} - Success!\n'.format(vb_name, b_name, p))
-
-					else:
-						self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
-
-			for i in range(len(self.boundary_vertices)):
-				j = (i + 1) % len(self.boundary_vertices)
-				k = (i - 1 + len(self.boundary_vertices)) % len(self.boundary_vertices)
-
-				v = self.boundary_vertices[i]
-				feasibility, diff = self.check_feasibility(A_cell, b_cell, v)
-
-				if feasibility:
-					first, second = "B_{}{}".format(k, i), "B_{}{}".format(i, j)
-					cell_graph.add_edge(first, second, VEdge("BND_{}".format(i), v))
-					self.logger.write('\t- {} X {} = {} - Success!\n'.format(first, second, v))
-
-				else:
-					self.logger.write('\t- Boundary vertex {} - Failure! ||| INFEASIBLE, diff: {}\n'.format(v, diff))
-
-			self.voronoi_cell = cell_graph.traverse()
-
-			self.logger.write("\n***********\n************\n")
-			self.logger.write("Voronoi cell of UAS {}:\n".format(self.uid))
-			for v in self.voronoi_cell:
-				self.logger.write("\t{}\n".format(v))
-			self.logger.write("\n***********\n************\n")
-
-			A_iq = matrix(A_cell, tc='d')
-			b_iq = matrix(b_cell, tc='d')
-			self.dump_voronoi_cell()
-			self.broadcast_cell()
-
-			return A_iq, b_iq
-		except Exception as e:
-			print(traceback.format_exc())
-
-	def compute_bisectors2(self):
-		try:
 			vbisectors = []
 			constraints, values = [], []
 			tol = 0.1
@@ -386,9 +358,6 @@ class UAS:
 					n_j, m_j, b_name = vbisectors[j]
 					d_j = m_j.dot(n_j)
 
-					# if np.arctan2(n_i[1], n_i[0]) == np.arctan2(n_j[1], n_j[0]):
-					# 	continue
-
 					try:
 						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
 						b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
@@ -401,7 +370,6 @@ class UAS:
 						print(traceback.format_exc())
 						continue
 
-					# inside_check = is_inside_polygon(self.boundary_vertices, p)
 					inside_check = is_point_valid(self.boundary_vertices, p, self.holes)
 					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
 
@@ -544,24 +512,251 @@ class UAS:
 		except Exception as e:
 			print(traceback.format_exc())
 
+	def compute_bisectors2(self):
+		try:
+			vbisectors = []
+			constraints, values = [], []
+			tol = 0.1
+
+			for nbid, fs in self.nb_states.items():
+				normal = (fs['pos'] - self.position).round(2)
+				middle = ((fs['pos'] + self.position) * 0.5).round(2)
+				constraints.append(normal)
+				values.append((middle.dot(normal)).round(2))
+				vbisectors.append((normal, middle, "D_{}{}".format(self.uid, nbid)))
+
+			A_cell = np.array(constraints, dtype=float)
+			b_cell = np.array(values, dtype=float)
+			self.voronoi_cell = []
+			cell_graph = DVGraph()
+
+
+			####################################################################################
+			# Voronoi Bisectors vs. Voronoi Bisectors ##########################################
+			# self.logger.write('UAS {} - Voronoi Construction:\n'.format(self.uid))
+			# for i in range(len(vbisectors) - 1):
+			# 	n_i, m_i, vb_name = vbisectors[i]
+			# 	d_i = m_i.dot(n_i)
+
+			# 	for j in range(i + 1, len(vbisectors)):
+			# 		n_j, m_j, b_name = vbisectors[j]
+			# 		d_j = m_j.dot(n_j)
+
+			# 		try:
+			# 			A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
+			# 			b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
+			# 			p = np.linalg.solve(A_, b_).round(2)
+
+			# 		except np.linalg.LinAlgError:
+			# 			continue
+
+			# 		except:
+			# 			print(traceback.format_exc())
+			# 			continue
+
+			# 		inside_check = is_point_valid(self.boundary_vertices, p, self.holes)
+			# 		feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
+
+			# 		if inside_check and feasibility_check:
+			# 			cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+			# 			self.logger.write('\t- {} X {} = {} - Success!\n'.format(vb_name, b_name, p))
+
+			# 		else:
+			# 			self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
+			####################################################################################
+
+
+			####################################################################################
+			# Voronoi Bisectors vs. Boundary Segments ##########################################
+			for i in range(len(vbisectors)):
+				n_i, m_i, vb_name = vbisectors[i]
+				d_i = m_i.dot(n_i)
+
+				for j in range(len(self.boundary)):
+					n_j, m_j, b_name = self.boundary[j]
+					d_j = m_j.dot(n_j)
+
+					try:
+						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
+						b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
+						p = np.linalg.solve(A_, b_).round(2)
+
+					except np.linalg.LinAlgError:
+						continue
+
+					except:
+						print(traceback.format_exc())
+						continue
+
+					k = (j + 1) % len(self.boundary_vertices)
+					inside_check = onSegment(self.boundary_vertices[j], p, self.boundary_vertices[k])
+					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
+
+					if inside_check and feasibility_check:
+						start_feasible, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[j])
+						end_feasible, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[k])
+
+						if start_feasible:
+							e_start = 'B_{}'.format(j)
+							e_finish = 'P_{}_{}'.format(vb_name, b_name)
+							cell_graph.add_edge(VNode(e_start, self.boundary_vertices[j]), 
+												VNode(e_finish, p))
+
+							self.logger.write('\t- {} -> {} - Success!\n'.format(e_start, e_finish))
+
+						elif end_feasible:
+							e_start = 'P_{}_{}'.format(vb_name, b_name)
+							e_finish = 'B_{}'.format(k)
+							cell_graph.add_edge(VNode(e_start, self.boundary_vertices[k]), 
+												VNode(e_finish, p))
+
+							self.logger.write('\t- {} -> {} - Success!\n'.format(e_start, e_finish))
+
+						else:
+							rospy.logwarn("UAS {} - Should this be executed at all ??".format(self.uid))
+							# self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
+
+					else:
+						self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
+			####################################################################################
+
+
+			####################################################################################
+			# Voronoi Bisectors vs. Hole Segments ##############################################
+			# for i in range(len(vbisectors)):
+			# 	n_i, m_i, vb_name = vbisectors[i]
+			# 	d_i = m_i.dot(n_i)
+
+			# 	for j in range(len(self.hole_segments)):
+			# 		n_j, m_j, h_name = self.hole_segments[j]
+			# 		d_j = m_j.dot(n_j)
+
+			# 		try:
+			# 			A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
+			# 			b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
+			# 			p = np.linalg.solve(A_, b_).round(2)
+
+			# 		except np.linalg.LinAlgError:
+			# 			continue
+
+			# 		except:
+			# 			print(traceback.format_exc())
+			# 			continue
+
+
+			# 		hole_name_parsed = h_name.split('_')
+			# 		hole_seg_start, hole_seg_end = (self.holes[hole_name_parsed[1]][int(hole_name_parsed[2])], 
+			# 										self.holes[hole_name_parsed[1]][int(hole_name_parsed[3])])
+
+			# 		inside_check = onSegment(hole_seg_start, p, hole_seg_end)
+			# 		feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
+
+			# 		if inside_check and feasibility_check:
+			# 			cell_graph.add_edge(vb_name, h_name, VEdge("P_{}_{}".format(vb_name, h_name), p))
+			# 			self.logger.write('\t- {} X {} = {} - Success!\n'.format(vb_name, h_name, p))
+
+			# 		else:
+			# 			self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, h_name, p, inside_check, feasibility_check))
+			####################################################################################
+
+
+			####################################################################################
+			# Voronoi Bisectors vs. Hole Vertices ##############################################
+			# for hn, hv in self.holes.items():
+			# 	for i in range(len(hv)):
+			# 		j = (i + 1) % len(hv)
+			# 		k = (i - 1 + len(hv)) % len(hv)
+
+			# 		v = hv[i]
+			# 		feasibility, diff = self.check_feasibility(A_cell, b_cell, v)
+
+			# 		if feasibility:
+			# 			first, second = "H_{}_{}_{}".format(hn, k, i), "H_{}_{}_{}".format(hn, i, j)
+			# 			cell_graph.add_edge(first, second, VEdge("HBND_{}".format(i), v))
+			# 			self.logger.write('\t- {} X {} = {} - Success!\n'.format(first, second, v))
+
+			# 		else:
+			# 			self.logger.write('\t- Hole {} vertex {} - Failure! ||| INFEASIBLE, diff: {}\n'.format(hn, v, diff))
+			####################################################################################
+
+
+			####################################################################################
+			# Adding Boundary Vertices to Cell Graph, If Necessary #############################
+			for i in range(len(self.boundary_vertices)):
+				j = (i + 1) % len(self.boundary_vertices)
+
+				# v = self.boundary_vertices[i]
+				# feasibility, diff = self.check_feasibility(A_cell, b_cell, v)
+				start_feasibility, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[i])
+				end_feasibility, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[j])
+
+				first, second = "B_{}".format(i), "B_{}".format(j)
+				if start_feasibility and end_feasibility:
+					cell_graph.add_edge(VNode(first, self.boundary_vertices[i]), 
+										VNode(second, self.boundary_vertices[j]))
+
+					self.logger.write('\t- {} -> {} - Success!\n'.format(first, second))
+
+				else:
+					self.logger.write('\t- Start {}: {} - End {}: {}\n'.format(first, start_feasibility, second, end_feasibility))
+					# self.logger.write('\t- Boundary vertex {} - Failure! ||| INFEASIBLE, diff: {}\n'.format(v, diff))
+			####################################################################################
+
+
+			self.voronoi_cell = cell_graph.traverse()
+
+			self.logger.write("\n***********\n************\n")
+			self.logger.write("Voronoi cell of UAS {}:\n".format(self.uid))
+			for v in self.voronoi_cell:
+				self.logger.write("\t{}\n".format(v))
+			self.logger.write("\n***********\n************\n")
+
+			A_iq = matrix(A_cell, tc='d')
+			b_iq = matrix(b_cell, tc='d')
+			self.dump_voronoi_cell()
+			self.broadcast_cell()
+
+			return A_iq, b_iq
+		except Exception as e:
+			print(traceback.format_exc())
+
 	def set_goal(self, g):
 		change = np.linalg.norm(g - self.goal)
 
-		if change < 0.1:
+		if change < 0.01:
 			self.converged_count += 1
 
 		if self.converged_count >= 25:
 			self.converged = True
-
-			if self.coverage_state == 0:
-				print("UAS {} has converged! Transitioning to complete coverage phase...".format(self.uid))
 
 		else:
 			self.converged = False
 
 		self.prev_goal = self.goal
 		self.goal = np.array(g, dtype=float)
-		# rospy.loginfo('UAS {0} goal set to {1}.'.format(self.uid, self.goal))
+
+		if self.coverage_state == 0:
+			rospy.loginfo('UAS {} goal set to {} (change: {}) - (count: {}).'.format(self.uid, 
+																					 self.goal, 
+																					 change, 
+																					 self.converged_count))
+
+	def set_coverage_start_goal(self):
+		# guidance_vector = np.array([np.cos(self.heading + np.pi / 2.), np.sin(self.heading + np.pi / 2.)], dtype=float)
+		guidance_vector = np.array([np.cos(np.pi / 2.), np.sin(np.pi / 2.)], dtype=float)
+		cell_vertices_as_grid = map(lambda v: real_to_grid(v, self.grid_offset, self.grid_resolution), self.voronoi_cell)
+		cell_vertices_offsetted = map(lambda v: grid_to_real(v, self.grid_offset, self.grid_resolution), cell_vertices_as_grid)
+		utility_values = map(lambda v: np.dot(np.array(v, dtype=float), guidance_vector), cell_vertices_offsetted)
+		# coverage_start_as_grid = real_to_grid(self.voronoi_cell[0], self.grid_offset, self.grid_resolution)
+		# coverage_start_offsetted = grid_to_real(coverage_start_as_grid, self.grid_offset, self.grid_resolution)
+		# self.set_goal(coverage_start_offsetted)
+		# self.set_goal(cell_vertices_offsetted[np.argmax(utility_values)])
+		return cell_vertices_offsetted[np.argmax(utility_values)]
+
+	def get_converged_mass(self):
+		cell_copy = list(self.voronoi_cell)
+		cell_copy.append(cell_copy[0])
+		return np.abs(get_area(cell_copy))
 
 	def compute_goal_from_immediate_frontier(self, eligibles):
 		maxIdx, maxVal = 0, eligibles[0][0]
@@ -578,24 +773,25 @@ class UAS:
 
 		return eligibles[maxIdx]
 
-	def solve_step(self):
+	def solve_step(self, direct=False):
 		try:
 			v_next = self.velocity
 
-			if len(self.voronoi_cell) > 3:
-				self.voronoi_cell.append(self.voronoi_cell[0])
-				centroid = get_centroid(self.voronoi_cell, self.uid)
-				self.set_goal(centroid)
+			if not direct:
+				if len(self.voronoi_cell) >= 3:
+					self.voronoi_cell.append(self.voronoi_cell[0])
+					centroid = get_centroid(self.voronoi_cell, self.uid)
+					self.set_goal(centroid)
 
-				v_next = self.goal - self.position
-				_norm = np.linalg.norm(v_next)
+			v_next = self.goal - self.position
+			_norm = np.linalg.norm(v_next)
 
-				if _norm > self.args['vmax']:
-					v_next *= self.args['vmax'] / _norm
+			if _norm > self.args['vmax']:
+				v_next *= self.args['vmax'] / _norm
 
-				return v_next
+			return v_next
 
-			return np.zeros(2)
+			# return np.zeros(2)
 		except Exception as e:
 			print(traceback.format_exc())
 			return np.zeros(2)
@@ -627,7 +823,7 @@ class UAS:
 				feasibility, diff = self.check_feasibility(A_cell, b_cell, cand_real_pos)
 				is_unexplored = (self.local_grid_map[cand_grid_pos] == -1)
 				# is_inside = is_inside_polygon(self.boundary_vertices, cand_real_pos)
-				is_inside = is_point_valid(self.boundary_vertices, cand_real_pos)
+				is_inside = is_point_valid(self.boundary_vertices, cand_real_pos, self.holes)
 
 				self.logger.write("\t Candidate: ({:.3f}, {:.3f}) - IN: {}, FSB: {}\n".format(cand_real_pos[0], cand_real_pos[1], is_inside, feasibility))
 
@@ -671,7 +867,7 @@ class UAS:
 			print(traceback.format_exc())
 			return np.zeros(2)
 
-	def solve_step3(self, A_cell, b_cell):
+	def solve_step3(self, A_cell, b_cell, first=False):
 		try:
 			if A_cell is None or b_cell is None:
 				print("NONE type cell constraint matrix and value vector is given!")
@@ -690,7 +886,7 @@ class UAS:
 
 				feasibility, diff = self.check_feasibility(A_cell, b_cell, cand_real_pos)
 				is_unexplored = (self.local_grid_map[cand_grid_pos] == -1)
-				is_inside = is_point_valid(self.boundary_vertices, cand_real_pos)
+				is_inside = is_point_valid(self.boundary_vertices, cand_real_pos, self.holes)
 
 				self.logger.write("\t Candidate: ({:.3f}, {:.3f}) - IN: {}, FSB: {}\n".format(cand_real_pos[0], cand_real_pos[1], is_inside, feasibility))
 
@@ -700,18 +896,17 @@ class UAS:
 					heading_vector = np.array([np.cos(self.heading), np.sin(self.heading)], dtype=float)
 
 					# Left biased
-					guidance_vector = np.array([np.cos(self.heading + np.pi / 2.), np.sin(self.heading + np.pi / 2.)], dtype=float)
+					guidance_vector = np.array([np.cos(np.pi / 2.), np.sin(np.pi / 2.)], dtype=float)
+					# guidance_vector = np.array([np.cos(self.heading + np.pi / 2.), np.sin(self.heading + np.pi / 2.)], dtype=float)
 
 					# Right biased
 					# guidance_vector = np.array([np.cos(self.heading - np.pi / 2.), np.sin(self.heading - np.pi / 2.)], dtype=float)
 
-					# gain = info_gain(self.local_grid_map, cand_grid_pos)
-					# value = goal_vector.dot(heading_vector) - self.local_grid_map[cand_grid_pos] + a[2]
-					# value = goal_vector.dot(heading_vector) + gain + a[2] + int(is_unexplored) * 1000
-					value = goal_vector.dot(guidance_vector) + int(is_unexplored) * 1000
-					# value = gain + a[2] + int(is_unexplored) * 1000
-					# value = goal_vector.dot(heading_vector) + a[2]
-					# value = goal_vector[0] * np.cos(self.heading) + goal_vector[1] * np.sin(self.heading) + a[2]
+					# value = 2 * goal_vector.dot(heading_vector) * int(is_unexplored) + goal_vector.dot(guidance_vector) + a[2]
+					if first:
+						heading_vector = guidance_vector
+
+					value = goal_vector.dot(heading_vector) + int(is_unexplored) * 1000
 
 					self.logger.write("\t ({:.3f}, {:.3f}) with utility value: {:.3f}\n\n".format(cand_real_pos[0], cand_real_pos[1], value))
 					eligible_goals.append((value, cand_real_pos))
@@ -743,6 +938,34 @@ class UAS:
 			print(traceback.format_exc())
 			return np.zeros(2)
 
+	def solve_step_by_force(self):
+		exerted_force = np.zeros(2)
+		peer_rep = np.zeros(2)
+		goal_attr = np.zeros(2)
+		bnd_rep = np.zeros(2)
+		obs_rep = np.zeros(2)
+
+		self.compute_goal()
+		peer_rep = self.compute_peer_repulsion()
+		# goal_attr = self.compute_goal_attraction()
+		bnd_rep = self.compute_boundary_respulsion()
+		# obs_rep = self.compute_obstacle_repulsion()
+
+		self.logger.write("\n*****\nForces on UAS {}:\n".format(self.uid))
+		self.logger.write("\tPeer repulsion    : {}\n".format(peer_rep))
+		self.logger.write("\tGoal attraction   : {}\n".format(goal_attr))
+		self.logger.write("\tBoundary repulsion: {}\n".format(bnd_rep))
+		self.logger.write("\tObstacle repulsion: {}\n".format(obs_rep))
+		self.logger.write("*****\n")
+
+		exerted_force = peer_rep + goal_attr + bnd_rep + obs_rep
+
+		magnitude = np.linalg.norm(exerted_force)
+		if magnitude > self.args['vmax']:
+			exerted_force *= self.args['vmax'] / magnitude
+
+		return exerted_force
+
 	def vel_pub(self):
 		vel_cmd = Twist()
 		vel_cmd.linear.x = self.velocity[0]
@@ -753,7 +976,7 @@ class UAS:
 		prev_grid_pos = real_to_grid(self.position, self.grid_offset, self.grid_resolution)
 
 		next_position = self.position + v_next / self.args['rate']
-		if is_point_valid(self.boundary_vertices, next_position):
+		if is_point_valid(self.boundary_vertices, next_position, self.holes):
 			self.position = next_position
 
 		else:
@@ -768,8 +991,9 @@ class UAS:
 		# if np.linalg.norm(self.prev_goal - self.goal) >= 1.:
 			# prev_grid_pos = real_to_grid(self.prev_goal, self.grid_offset, self.grid_resolution)
 
-		if self.local_grid_map[prev_grid_pos] == -1:
-			self.local_grid_map[prev_grid_pos] = self.uid
+		if self.coverage_state == 2:
+			if self.local_grid_map[prev_grid_pos] == -1:
+				self.local_grid_map[prev_grid_pos] = self.uid
 
 		if self.grid_pos != prev_grid_pos:
 			self.sense_info_pub.publish(SensingInfo(self.prev_goal[0], self.prev_goal[1], prev_grid_pos[0], prev_grid_pos[1], self.uid, 1))

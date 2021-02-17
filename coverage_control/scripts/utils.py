@@ -320,6 +320,8 @@ class VNode:
 	def __init__(self, name, point):
 		self.name = name
 		self.point = point
+		self.in_edges = dict()
+		self.out_edges = dict()
 
 class VGraph:
 
@@ -333,16 +335,17 @@ class VGraph:
 		if self.nodes.get(v2) is None:
 			self.nodes[v2] = dict()
 
-		for _, (e, nb) in self.nodes[v1].items():
-			if nb == v2:
-				return
-
-		# for (e, nb) in self.nodes[v2]:
-		# 	if nb == v1:
+		# for _, (e, nb) in self.nodes[v1].items():
+		# 	if nb == v2:
 		# 		return
 
+		if self.nodes[v1].get(edge.name) is not None:
+			rospy.logerr("This should not be executed! An edge cannot \
+				go to 2 different locations simultaneously!")
+			return
+
 		self.nodes[v1][edge.name] = (edge, v2)
-		self.nodes[v2][edge.name] = (edge, v1)
+		# self.nodes[v2][edge.name] = (edge, v1)
 
 	def traverse(self):
 		if len(self.nodes) == 0:
@@ -351,21 +354,38 @@ class VGraph:
 		traversal = []
 		stack = deque()
 		start = self.nodes.keys()[0]
-		stack.append((None, start))
+		# stack.append((None, start))
+		stack.append(start)
 		visited = dict()
 
 		while len(stack) > 0:
-			edge, vnode = stack.pop()
+			vnode = stack.pop()
+			found = False
 
-			if edge is not None or visited.get(vnode):
-				# traversal.append(edge.point)
-				traversal.append(edge)
+			for _, (edge, nb_node) in self.nodes[vnode].items():
+				if visited.get(edge.name) is None:
+					stack.append(nb_node)
+					visited[edge.name] = True
+					traversal.append(edge)
+					found = True
+					break
 
-			for _, conn in self.nodes[vnode].items():
-				if visited.get(conn[1]) is None:
-					stack.append(conn)
+			if not found:
+				break
 
-			visited[vnode] = True
+		# while len(stack) > 0:
+		# 	edge, vnode = stack.pop()
+
+		# 	# if edge is not None or visited.get(vnode):
+		# 	if edge is not None or visited.get(edge.name):
+		# 		# traversal.append(edge.point)
+		# 		traversal.append(edge)
+
+		# 	for _, conn in self.nodes[vnode].items():
+		# 		if visited.get(conn[1]) is None:
+		# 			stack.append(conn)
+
+		# 	visited[vnode] = True
 
 		geometric_visited = dict()
 		geo_traversal = []
@@ -399,28 +419,27 @@ class DVGraph:
 			self.nodes[v2.name] = dict()
 			self.node_list[v2.name] = v2
 
-		# for nb, _ in self.nodes[v1].items():
-		# 	if nb == v2:
-		# 		return
-
 		if self.nodes[v1.name].get(v2.name) is not None:
 			return
 
 		self.nodes[v1.name][v2.name] = v2
 
-	def traverse(self):
+	def traverse(self, logger=None):
 		if len(self.nodes) < 3:
 			return []
 
 		traversal = []
 		stack = deque()
-		start = self.node_list.keys()[0]
-		stack.append(self.node_list[start])
+		start_node = self.node_list.keys()[0]
+		stack.append(self.node_list[start_node])
 		visited = dict()
 
 		while len(stack) > 0:
 			vnode = stack.pop()
 			traversal.append(vnode)
+
+			if logger is not None:
+				logger.write("\t *** Traversed node {}, {}\n".format(vnode.name, vnode.point))
 
 			for nb, nbnode in self.nodes[vnode.name].items():
 				if visited.get(nb) is None:

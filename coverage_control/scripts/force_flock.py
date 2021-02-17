@@ -14,12 +14,15 @@ all_states = dict()
 __COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0.99,0), (0.99,0,0.99),
 			(0,0.99,0.99), (0.99,0,0.5), (0.99,0.5,0), (0.,0.99,0.5), (0.5,0.5,0.5)]
 
+# __WEIGHTS = [1., 3., 1., 1., 1., 1., 1., 1., 1., 1.]
+
 class Agent:
 
 	def __init__(self, aid, pos, sTable):
 		self.aid = aid
 		self.p = pos
 		self.v = np.zeros(2)
+		self.hdg = 0.
 		self.sTable = sTable
 		self.move_thread = threading.Thread(name="ThMove_{}".format(self.aid), target=self.move)
 		self.terminate = False
@@ -27,7 +30,20 @@ class Agent:
 		self.a = 0.2
 		self.b = 0.2
 		self.vmax = 2.0
-		self.r_safe = 2.0
+		self.r_safe = 3.0
+		self.r_sense = 3.0
+		self.cand_size = 10
+		self.sigma = 2.
+
+		self.boundary = []
+		for i in range(len(globals()['boundary'])):
+			j = (i + 1) % len(globals()['boundary'])
+			middle = (globals()['boundary'][j] + globals()['boundary'][i]) * 0.5
+			direction = globals()['boundary'][j] - globals()['boundary'][i]
+			normal = np.array([-direction[1], direction[0]], dtype=float)
+			normal /= np.linalg.norm(normal)
+			self.boundary.append((normal, middle))
+
 		print("Agent {} is ready at {}".format(self.aid, self.p))
 
 	def start(self):
@@ -38,6 +54,23 @@ class Agent:
 
 	def broadcast(self):
 		self.sTable[self.aid] = {'pos': self.p, 'vel': self.v}
+
+	def sample(self):
+		candidates = []
+
+		for _ in range(self.cand_size):
+			length = np.random.uniform(0, self.r_sense - 0.1)
+			angle = np.random.uniform(-np.pi, np.pi)
+			cand_vec = np.array([length * np.cos(angle), length * np.sin(angle)], dtype=float)
+			candidates.append(cand_vec)
+
+		return candidates
+
+	def info_gain(self, q):
+		return np.e ** (- (self.r_sense - np.linalg.norm(q)) ** 2 / (2 * self.sigma ** 2))
+
+	def alignment_gain(self, q):
+		return q[0] * np.cos(self.hdg) + q[1] * np.sin(self.hdg)
 
 	def repulsion(self):
 		force = np.zeros(2)
@@ -51,32 +84,45 @@ class Agent:
 			unit_repulsion = direction #/ norm
 			force += unit_repulsion * self.b / (norm - 2. * self.r_safe) ** 2
 
+		for (n_i, m_i) in self.boundary:
+			rep = np.dot(m_i - self.p, n_i)
+
+			if rep <= self.r_safe:
+				force += rep * n_i * self.b / (norm - 2. * self.r_safe) ** 2
+
 		return force
 
 	def attraction(self):
 		force = np.zeros(2)
 
-		for aid, state in self.sTable.items():
-			if aid == self.aid:
-				continue
+		cands = self.sample()
+		for cand in cands:
+			norm = np.linalg.norm(cand)
+			cand_gain = self.info_gain(cand) * self.alignment_gain(cand)
+			force += cand_gain * cand * self.a / norm
 
-			direction = state['pos'] - self.p
-			norm = np.linalg.norm(direction)
-			unit_repulsion = direction #/ norm
-			force += unit_repulsion * self.a / norm
+		# for aid, state in self.sTable.items():
+		# 	if aid == self.aid:
+		# 		continue
+
+		# 	direction = state['pos'] - self.p
+		# 	norm = np.linalg.norm(direction)
+		# 	unit_repulsion = direction #/ norm
+		# 	force += unit_repulsion * self.a / norm
 
 		return force
 
 	def step(self):
 		v_norm = np.linalg.norm(self.v)
 
-		if v_norm < 1e-2:
-			print("Agent {} is too fucking slow!".format(self.aid))
+		# if v_norm < 1e-2:
+		# 	print("Agent {} is too fucking slow!".format(self.aid))
 
 		# else:
 		# 	print("Agent {} has speed {}".format(self.aid, v_norm))
 
 		self.p += self.v * self.dt
+		self.hdg = np.arctan2(self.v[1], self.v[0])
 
 	def move(self):
 		pre_stamp = time.time()
@@ -119,7 +165,7 @@ def get_random_positions(lims, count):
 		valid = True
 
 		for sample in valid_samples:
-			if np.linalg.norm(p - sample) <= 2.:
+			if np.linalg.norm(p - sample) <= 3.:
 				valid = False
 				break
 
@@ -143,15 +189,15 @@ def animate_motion(i, ax, bnd, lims, states):
 		pos, vel = state['pos'], state['vel']
 		heading = np.arctan2(vel[1], vel[0])
 		robot_color = globals()['__COLORS'][aid + 1]
-		ax.quiver(pos[0], pos[1], np.cos(heading), np.sin(heading), color=robot_color, linewidth=1.)
+		ax.quiver(pos[0], pos[1], np.cos(heading), np.sin(heading), color=robot_color)
 		ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
 
 def ctrl_c_handler(signum, frame):
-    print('Closing...')
+	print('Closing...')
 
-    for _, agent in globals()['all_agents'].items():
-    	agent.cancel()
-    	agent.move_thread.join()
+	for _, agent in globals()['all_agents'].items():
+		agent.cancel()
+		agent.move_thread.join()
 
 if __name__ == "__main__":
 	signal.signal(signal.SIGINT, ctrl_c_handler)
@@ -184,3 +230,7 @@ if __name__ == "__main__":
 		agent.start()
 
 	plt.show()
+
+	for _, agent in all_agents.items():
+		agent.cancel()
+		agent.move_thread.join()

@@ -528,7 +528,7 @@ class UAS:
 			A_cell = np.array(constraints, dtype=float)
 			b_cell = np.array(values, dtype=float)
 			self.voronoi_cell = []
-			cell_graph = DVGraph()
+			cell_graph = VGraph()
 
 
 			####################################################################################
@@ -597,24 +597,15 @@ class UAS:
 						end_feasible, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[k])
 
 						if start_feasible:
-							e_start = 'B_{}'.format(j)
-							e_finish = 'P_{}_{}'.format(vb_name, b_name)
-							cell_graph.add_edge(VNode(e_start, self.boundary_vertices[j]), 
-												VNode(e_finish, p))
-
-							self.logger.write('\t- {} -> {} - Success!\n'.format(e_start, e_finish))
+							cell_graph.add_edge(b_name, vb_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+							self.logger.write('\t- {} --X--> {} = {} - Success!\n'.format(b_name, vb_name, p))
 
 						elif end_feasible:
-							e_start = 'P_{}_{}'.format(vb_name, b_name)
-							e_finish = 'B_{}'.format(k)
-							cell_graph.add_edge(VNode(e_start, self.boundary_vertices[k]), 
-												VNode(e_finish, p))
-
-							self.logger.write('\t- {} -> {} - Success!\n'.format(e_start, e_finish))
+							cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+							self.logger.write('\t- {} --X--> {} = {} - Success!\n'.format(vb_name, b_name, p))
 
 						else:
 							rospy.logwarn("UAS {} - Should this be executed at all ??".format(self.uid))
-							# self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
 
 					else:
 						self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
@@ -684,26 +675,32 @@ class UAS:
 			# Adding Boundary Vertices to Cell Graph, If Necessary #############################
 			for i in range(len(self.boundary_vertices)):
 				j = (i + 1) % len(self.boundary_vertices)
+				k = (i - 1 + len(self.boundary_vertices)) % len(self.boundary_vertices)
 
-				# v = self.boundary_vertices[i]
-				# feasibility, diff = self.check_feasibility(A_cell, b_cell, v)
-				start_feasibility, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[i])
-				end_feasibility, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[j])
+				v = self.boundary_vertices[i]
+				feasibility, diff = self.check_feasibility(A_cell, b_cell, v)
+				# start_feasibility, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[i])
+				# end_feasibility, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[j])
 
-				first, second = "B_{}".format(i), "B_{}".format(j)
-				if start_feasibility and end_feasibility:
-					cell_graph.add_edge(VNode(first, self.boundary_vertices[i]), 
-										VNode(second, self.boundary_vertices[j]))
+				# first, second = "B_{}".format(i), "B_{}".format(j)
+				# if start_feasibility and end_feasibility:
+				if feasibility:
+					# cell_graph.add_edge(VNode(first, self.boundary_vertices[i]), 
+					# 					VNode(second, self.boundary_vertices[j]))
 
-					self.logger.write('\t- {} -> {} - Success!\n'.format(first, second))
+					# self.logger.write('\t- {} -> {} - Success!\n'.format(first, second))
+					first, second = "B_{}{}".format(k, i), "B_{}{}".format(i, j)
+					cell_graph.add_edge(first, second, VEdge("BND_{}".format(i), v))
+					self.logger.write('\t- {} X {} = {} - Success!\n'.format(first, second, v))
 
 				else:
-					self.logger.write('\t- Start {}: {} - End {}: {}\n'.format(first, start_feasibility, second, end_feasibility))
-					# self.logger.write('\t- Boundary vertex {} - Failure! ||| INFEASIBLE, diff: {}\n'.format(v, diff))
+					# self.logger.write('\t- Start {}: {} - End {}: {}\n'.format(first, start_feasibility, second, end_feasibility))
+					self.logger.write('\t- Boundary vertex {} - Failure! ||| INFEASIBLE, diff: {}\n'.format(v, diff))
 			####################################################################################
 
 
 			self.voronoi_cell = cell_graph.traverse()
+			# self.voronoi_cell = cell_graph.traverse(self.logger)
 
 			self.logger.write("\n***********\n************\n")
 			self.logger.write("Voronoi cell of UAS {}:\n".format(self.uid))

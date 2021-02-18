@@ -319,33 +319,62 @@ class VNode:
 
 	def __init__(self, name, point):
 		self.name = name
-		self.point = point
-		self.in_edges = dict()
-		self.out_edges = dict()
+		self.reference = None
+		self.neighbours = dict()
+		self.neighbour_order = []
+
+	def add_neighbour(self, edge, vnode, ordered=False):
+		connection_pair = (edge, vnode)
+
+		if not ordered:
+			if len(self.neighbour_order) > 0:
+				rospy.logerr("This may cause an ambiguous traversal in the VGraph!")
+
+			self.neighbours[edge.name] = connection_pair
+
+		else:
+			self.neighbours[edge.name] = connection_pair
+
+			if self.reference is None:
+				self.reference = vnode
+				self.neighbour_order.append(connection_pair + (0, ))
+
+			else:
+				distance = np.linalg.norm(vnode.point - self.reference.point)
+				insertion_index = 1
+
+				while insertion_index < len(self.neighbour_order):
+					if self.neighbour_order[insertion_index][2] < distance:
+						break
+
+				self.neighbour_order.insert(insertion_index, connection_pair + (distance, ))
 
 class VGraph:
 
 	def __init__(self):
 		self.nodes = dict()
 
+	# def add_edge(self, v1, v2, edge):
+	# 	if self.nodes.get(v1) is None:
+	# 		self.nodes[v1] = dict()
+
+	# 	if self.nodes.get(v2) is None:
+	# 		self.nodes[v2] = dict()
+
+	# 	# for _, (e, nb) in self.nodes[v1].items():
+	# 	# 	if nb == v2:
+	# 	# 		return
+
+	# 	if self.nodes[v1].get(edge.name) is not None:
+	# 		rospy.logerr("This should not be executed! An edge cannot \
+	# 			go to 2 different locations simultaneously!")
+	# 		return
+
+	# 	self.nodes[v1][edge.name] = (edge, v2)
+	# 	# self.nodes[v2][edge.name] = (edge, v1)
+
 	def add_edge(self, v1, v2, edge):
-		if self.nodes.get(v1) is None:
-			self.nodes[v1] = dict()
-
-		if self.nodes.get(v2) is None:
-			self.nodes[v2] = dict()
-
-		# for _, (e, nb) in self.nodes[v1].items():
-		# 	if nb == v2:
-		# 		return
-
-		if self.nodes[v1].get(edge.name) is not None:
-			rospy.logerr("This should not be executed! An edge cannot \
-				go to 2 different locations simultaneously!")
-			return
-
-		self.nodes[v1][edge.name] = (edge, v2)
-		# self.nodes[v2][edge.name] = (edge, v1)
+		pass
 
 	def traverse(self, logger=None):
 		if len(self.nodes) < 3:
@@ -408,62 +437,62 @@ class VGraph:
 
 		return geo_traversal
 
-class DVGraph:
+# class DVGraph:
 
-	def __init__(self):
-		self.nodes = dict()
-		self.node_list = dict()
+# 	def __init__(self):
+# 		self.nodes = dict()
+# 		self.node_list = dict()
 
-	def add_edge(self, v1, v2):
-		if self.nodes.get(v1.name) is None:
-			self.nodes[v1.name] = dict()
-			self.node_list[v1.name] = v1
+# 	def add_edge(self, v1, v2):
+# 		if self.nodes.get(v1.name) is None:
+# 			self.nodes[v1.name] = dict()
+# 			self.node_list[v1.name] = v1
 
-		if self.nodes.get(v2.name) is None:
-			self.nodes[v2.name] = dict()
-			self.node_list[v2.name] = v2
+# 		if self.nodes.get(v2.name) is None:
+# 			self.nodes[v2.name] = dict()
+# 			self.node_list[v2.name] = v2
 
-		if self.nodes[v1.name].get(v2.name) is not None:
-			return
+# 		if self.nodes[v1.name].get(v2.name) is not None:
+# 			return
 
-		self.nodes[v1.name][v2.name] = v2
+# 		self.nodes[v1.name][v2.name] = v2
 
-	def traverse(self, logger=None):
-		if len(self.nodes) < 3:
-			return []
+# 	def traverse(self, logger=None):
+# 		if len(self.nodes) < 3:
+# 			return []
 
-		traversal = []
-		stack = deque()
-		start_node = self.node_list.keys()[0]
-		stack.append(self.node_list[start_node])
-		visited = dict()
+# 		traversal = []
+# 		stack = deque()
+# 		start_node = self.node_list.keys()[0]
+# 		stack.append(self.node_list[start_node])
+# 		visited = dict()
 
-		while len(stack) > 0:
-			vnode = stack.pop()
-			traversal.append(vnode)
+# 		while len(stack) > 0:
+# 			vnode = stack.pop()
+# 			traversal.append(vnode)
 
-			if logger is not None:
-				logger.write("\t *** Traversed node {}, {}\n".format(vnode.name, vnode.point))
+# 			if logger is not None:
+# 				logger.write("\t *** Traversed node {}, {}\n".format(vnode.name, vnode.point))
 
-			for nb, nbnode in self.nodes[vnode.name].items():
-				if visited.get(nb) is None:
-					stack.append(nbnode)
+# 			for nb, nbnode in self.nodes[vnode.name].items():
+# 				if visited.get(nb) is None:
+# 					stack.append(nbnode)
 
-			visited[vnode.name] = True
+# 			visited[vnode.name] = True
 
-		geometric_visited = dict()
-		geo_traversal = []
+# 		geometric_visited = dict()
+# 		geo_traversal = []
 
-		for v in traversal:
-			v_visited = False
+# 		for v in traversal:
+# 			v_visited = False
 
-			for _, vnode in geometric_visited.items():
-				if np.linalg.norm(np.array(v.point) - np.array(vnode.point)) <= 0.5:
-					v_visited = True
-					break
+# 			for _, vnode in geometric_visited.items():
+# 				if np.linalg.norm(np.array(v.point) - np.array(vnode.point)) <= 0.5:
+# 					v_visited = True
+# 					break
 
-			if not v_visited:
-				geometric_visited[v.name] = v
-				geo_traversal.append(np.array(v.point))
+# 			if not v_visited:
+# 				geometric_visited[v.name] = v
+# 				geo_traversal.append(np.array(v.point))
 
-		return geo_traversal
+# 		return geo_traversal

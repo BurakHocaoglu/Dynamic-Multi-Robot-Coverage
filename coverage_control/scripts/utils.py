@@ -347,8 +347,8 @@ class VGraph:
 		self.nodes[v1][edge.name] = (edge, v2)
 		# self.nodes[v2][edge.name] = (edge, v1)
 
-	def traverse(self):
-		if len(self.nodes) == 0:
+	def traverse(self, logger=None):
+		if len(self.nodes) < 3:
 			return []
 
 		traversal = []
@@ -366,6 +366,10 @@ class VGraph:
 				if visited.get(edge.name) is None:
 					stack.append(nb_node)
 					visited[edge.name] = True
+
+					if logger is not None:
+						logger.write("\t *** Traversed node {}, {}\n".format(edge.name, edge.point))
+
 					traversal.append(edge)
 					found = True
 					break

@@ -16,18 +16,6 @@
 # boundary_repel_thresh: 5.
 # memrep_coeff: -150.
 
-###################################################################################
-# Diamond environment
-# boundary: [[0., 40.], [-40., 0.], [0., -40.], [40., 0.]]
-
-# init0: [10., 0.]
-# init1: [0., 10.]
-# init2: [-15., 0.]
-# init3: [0., -15.]
-
-# obstacles: {}
-###################################################################################
-
 
 ###################################################################################
 # Star shaped environment
@@ -121,11 +109,10 @@ obstacles: {
 # }
 ###################################################################################
 
-uas_count: 2
+uas_count: 4
 rate: 4
 vmax: 3.0
-# logdir_prefix: "/home/burak/thesis_ws/src/coverage_control/log/logs_"
-logdir_prefix: "/home/hocaoglu/thesis_ws/src/coverage_control/log/logs_"
+logdir_prefix: "/home/burak/thesis_ws/src/coverage_control/log/logs_"
 
 grid_res: 2.
 footprint_size: 1

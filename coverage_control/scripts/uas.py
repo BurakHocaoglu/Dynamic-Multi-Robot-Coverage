@@ -533,36 +533,37 @@ class UAS:
 
 			####################################################################################
 			# Voronoi Bisectors vs. Voronoi Bisectors ##########################################
-			# self.logger.write('UAS {} - Voronoi Construction:\n'.format(self.uid))
-			# for i in range(len(vbisectors) - 1):
-			# 	n_i, m_i, vb_name = vbisectors[i]
-			# 	d_i = m_i.dot(n_i)
+			self.logger.write('UAS {} - Voronoi Construction:\n'.format(self.uid))
+			for i in range(len(vbisectors) - 1):
+				n_i, m_i, vb_name = vbisectors[i]
+				d_i = m_i.dot(n_i)
 
-			# 	for j in range(i + 1, len(vbisectors)):
-			# 		n_j, m_j, b_name = vbisectors[j]
-			# 		d_j = m_j.dot(n_j)
+				for j in range(i + 1, len(vbisectors)):
+					n_j, m_j, b_name = vbisectors[j]
+					d_j = m_j.dot(n_j)
 
-			# 		try:
-			# 			A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
-			# 			b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
-			# 			p = np.linalg.solve(A_, b_).round(2)
+					try:
+						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
+						b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
+						p = np.linalg.solve(A_, b_).round(2)
 
-			# 		except np.linalg.LinAlgError:
-			# 			continue
+					except np.linalg.LinAlgError:
+						continue
 
-			# 		except:
-			# 			print(traceback.format_exc())
-			# 			continue
+					except:
+						print(traceback.format_exc())
+						continue
 
-			# 		inside_check = is_point_valid(self.boundary_vertices, p, self.holes)
-			# 		feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
+					inside_check = is_point_valid(self.boundary_vertices, p, self.holes)
+					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
 
-			# 		if inside_check and feasibility_check:
-			# 			cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
-			# 			self.logger.write('\t- {} X {} = {} - Success!\n'.format(vb_name, b_name, p))
+					if inside_check and feasibility_check:
+						cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+						cell_graph.add_edge(b_name, vb_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+						self.logger.write('\t- {} <--X--> {} = {} - Success!\n'.format(vb_name, b_name, p))
 
-			# 		else:
-			# 			self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
+					else:
+						self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
 			####################################################################################
 
 
@@ -593,8 +594,8 @@ class UAS:
 					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
 
 					if inside_check and feasibility_check:
-						start_feasible, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[j])
-						end_feasible, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[k])
+						start_feasible = np.dot(n_i, self.boundary_vertices[j]) <= d_i + 0.5
+						end_feasible = np.dot(n_i, self.boundary_vertices[k]) <= d_i + 0.5
 
 						if start_feasible:
 							cell_graph.add_edge(b_name, vb_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
@@ -679,28 +680,19 @@ class UAS:
 
 				v = self.boundary_vertices[i]
 				feasibility, diff = self.check_feasibility(A_cell, b_cell, v)
-				# start_feasibility, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[i])
-				# end_feasibility, _ = self.check_feasibility(A_cell, b_cell, self.boundary_vertices[j])
 
-				# first, second = "B_{}".format(i), "B_{}".format(j)
-				# if start_feasibility and end_feasibility:
 				if feasibility:
-					# cell_graph.add_edge(VNode(first, self.boundary_vertices[i]), 
-					# 					VNode(second, self.boundary_vertices[j]))
-
-					# self.logger.write('\t- {} -> {} - Success!\n'.format(first, second))
 					first, second = "B_{}{}".format(k, i), "B_{}{}".format(i, j)
 					cell_graph.add_edge(first, second, VEdge("BND_{}".format(i), v))
 					self.logger.write('\t- {} X {} = {} - Success!\n'.format(first, second, v))
 
 				else:
-					# self.logger.write('\t- Start {}: {} - End {}: {}\n'.format(first, start_feasibility, second, end_feasibility))
 					self.logger.write('\t- Boundary vertex {} - Failure! ||| INFEASIBLE, diff: {}\n'.format(v, diff))
 			####################################################################################
 
 
-			self.voronoi_cell = cell_graph.traverse()
-			# self.voronoi_cell = cell_graph.traverse(self.logger)
+			# self.voronoi_cell = cell_graph.traverse()
+			self.voronoi_cell = cell_graph.traverse(self.logger)
 
 			self.logger.write("\n***********\n************\n")
 			self.logger.write("Voronoi cell of UAS {}:\n".format(self.uid))

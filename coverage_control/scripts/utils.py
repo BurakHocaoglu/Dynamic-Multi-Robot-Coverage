@@ -317,64 +317,60 @@ class VEdge:
 
 class VNode:
 
-	def __init__(self, name, point):
+	def __init__(self, name, point, sorting=False, descending=True):
 		self.name = name
-		self.reference = None
+		self.point = point
 		self.neighbours = dict()
-		self.neighbour_order = []
+		self.neighbour_order = None
+		self.is_descending = descending
+		self.to_be_sorted = sorting
 
-	def add_neighbour(self, edge, vnode, ordered=False):
+	# def add_neighbour(self, edge, vnode):
+	# 	connection_pair = (edge, vnode)
+	# 	self.neighbours[edge.name] = connection_pair
+
+	# 	value = np.sum(vnode.point - self.point)
+	# 	insertion_index = 0
+
+	# 	while insertion_index < len(self.neighbour_order):
+	# 		if self.is_ascending and self.neighbour_order[insertion_index][2] > value:
+	# 			break
+
+	# 		elif not self.is_ascending and self.neighbour_order[insertion_index][2] < value:
+	# 			break
+
+	# 		insertion_index += 1
+
+	# 	self.neighbour_order.insert(insertion_index, connection_pair + (distance, ))
+
+	def add_neighbour(self, edge, vnode):
 		connection_pair = (edge, vnode)
 
-		if not ordered:
-			if len(self.neighbour_order) > 0:
-				rospy.logerr("This may cause an ambiguous traversal in the VGraph!")
-
+		if self.neighbours.get(edge.name) is None:
 			self.neighbours[edge.name] = connection_pair
 
-		else:
-			self.neighbours[edge.name] = connection_pair
-
-			if self.reference is None:
-				self.reference = vnode
-				self.neighbour_order.append(connection_pair + (0, ))
-
-			else:
-				distance = np.linalg.norm(vnode.point - self.reference.point)
-				insertion_index = 1
-
-				while insertion_index < len(self.neighbour_order):
-					if self.neighbour_order[insertion_index][2] < distance:
-						break
-
-				self.neighbour_order.insert(insertion_index, connection_pair + (distance, ))
+	def sort_neighbours(self):
+		if self.to_be_sorted:
+			# values = [(np.sum(conn[0].point - self.point, conn)) for _, conn in self.neighbours.items()]
+			self.neighbour_order = [(np.sum(conn[0].point - self.point, conn)) for _, conn in self.neighbours.items()]
+			self.neighbour_order.sort(reverse=self.is_descending)
 
 class VGraph:
 
 	def __init__(self):
 		self.nodes = dict()
 
-	# def add_edge(self, v1, v2, edge):
-	# 	if self.nodes.get(v1) is None:
-	# 		self.nodes[v1] = dict()
-
-	# 	if self.nodes.get(v2) is None:
-	# 		self.nodes[v2] = dict()
-
-	# 	# for _, (e, nb) in self.nodes[v1].items():
-	# 	# 	if nb == v2:
-	# 	# 		return
-
-	# 	if self.nodes[v1].get(edge.name) is not None:
-	# 		rospy.logerr("This should not be executed! An edge cannot \
-	# 			go to 2 different locations simultaneously!")
-	# 		return
-
-	# 	self.nodes[v1][edge.name] = (edge, v2)
-	# 	# self.nodes[v2][edge.name] = (edge, v1)
-
 	def add_edge(self, v1, v2, edge):
-		pass
+		if self.nodes.get(v1) is None:
+			# self.nodes[v1] = dict()
+			self.nodes[v1.name] = v1
+
+		if self.nodes.get(v2) is None:
+			# self.nodes[v2] = dict()
+			self.nodes[v2.name] = v2
+
+		# self.nodes[v1][edge.name] = (edge, v2)
+		# self.nodes[v2][edge.name] = (edge, v1)
 
 	def traverse(self, logger=None):
 		if len(self.nodes) < 3:

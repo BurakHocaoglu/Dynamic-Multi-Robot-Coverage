@@ -369,6 +369,8 @@ class VGraph:
 			# self.nodes[v2] = dict()
 			self.nodes[v2.name] = v2
 
+		self.nodes[v1.name].add_neighbour(edge, v2)
+
 		# self.nodes[v1][edge.name] = (edge, v2)
 		# self.nodes[v2][edge.name] = (edge, v1)
 
@@ -379,7 +381,6 @@ class VGraph:
 		traversal = []
 		stack = deque()
 		start = self.nodes.keys()[0]
-		# stack.append((None, start))
 		stack.append(start)
 		visited = dict()
 
@@ -401,6 +402,25 @@ class VGraph:
 
 			if not found:
 				break
+
+		# while len(stack) > 0:
+		# 	vnode = stack.pop()
+		# 	found = False
+
+		# 	for _, (edge, nb_node) in self.nodes[vnode].items():
+		# 		if visited.get(edge.name) is None:
+		# 			stack.append(nb_node)
+		# 			visited[edge.name] = True
+
+		# 			if logger is not None:
+		# 				logger.write("\t *** Traversed node {}, {}\n".format(edge.name, edge.point))
+
+		# 			traversal.append(edge)
+		# 			found = True
+		# 			break
+
+		# 	if not found:
+		# 		break
 
 		# while len(stack) > 0:
 		# 	edge, vnode = stack.pop()

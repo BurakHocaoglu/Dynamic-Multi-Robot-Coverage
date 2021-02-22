@@ -532,6 +532,54 @@ class UAS:
 
 
 			####################################################################################
+			# Voronoi Bisectors vs. Voronoi Bisectors ##########################################
+			self.logger.write('UAS {} - Voronoi Construction:\n'.format(self.uid))
+			for i in range(len(vbisectors) - 1):
+				n_i, m_i, vb_name = vbisectors[i]
+				d_i = m_i.dot(n_i)
+
+				vector_i = self.position - m_i
+				angle_i = np.arctan2(vector_i[1], vector_i[0])
+				descending_order = (angle_i >= np.pi * 0.5 or angle_i < - np.pi * 0.5)
+				v_node_i = VNode(vb_name, m_i, sorting=True, descending=descending_order)
+
+				for j in range(i + 1, len(vbisectors)):
+					n_j, m_j, b_name = vbisectors[j]
+					d_j = m_j.dot(n_j)
+
+					vector_j = self.position - m_j
+					angle_j = np.arctan2(vector_j[1], vector_j[0])
+					descending_order = (angle_j >= np.pi * 0.5 or angle_j < - np.pi * 0.5)
+					v_node_i = VNode(vb_name, m_i, sorting=True, descending=descending_order)
+
+					try:
+						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
+						b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
+						p = np.linalg.solve(A_, b_).round(2)
+
+					except np.linalg.LinAlgError:
+						continue
+
+					except:
+						print(traceback.format_exc())
+						continue
+
+					inside_check = is_point_valid(self.boundary_vertices, p, self.holes)
+					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
+
+					if inside_check and feasibility_check:
+						# cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+						# cell_graph.add_edge(b_name, vb_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+						cell_graph.add_edge(v_node_i, v_node_j, VEdge("P_{}_{}".format(vb_name, b_name), p))
+						cell_graph.add_edge(v_node_j, v_node_i, VEdge("P_{}_{}".format(vb_name, b_name), p))
+						self.logger.write('\t- {} <--X--> {} = {} - Success!\n'.format(vb_name, b_name, p))
+
+					else:
+						self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
+			####################################################################################
+
+
+			####################################################################################
 			# Voronoi Bisectors vs. Boundary Segments ##########################################
 			for i in range(len(vbisectors)):
 				n_i, m_i, vb_name = vbisectors[i]
@@ -571,42 +619,6 @@ class UAS:
 
 						else:
 							rospy.logwarn("UAS {} - Should this be executed at all ??".format(self.uid))
-
-					else:
-						self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))
-			####################################################################################
-
-
-			####################################################################################
-			# Voronoi Bisectors vs. Voronoi Bisectors ##########################################
-			self.logger.write('UAS {} - Voronoi Construction:\n'.format(self.uid))
-			for i in range(len(vbisectors) - 1):
-				n_i, m_i, vb_name = vbisectors[i]
-				d_i = m_i.dot(n_i)
-
-				for j in range(i + 1, len(vbisectors)):
-					n_j, m_j, b_name = vbisectors[j]
-					d_j = m_j.dot(n_j)
-
-					try:
-						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
-						b_ = np.array([d_i.round(2), d_j.round(2)], dtype=float)
-						p = np.linalg.solve(A_, b_).round(2)
-
-					except np.linalg.LinAlgError:
-						continue
-
-					except:
-						print(traceback.format_exc())
-						continue
-
-					inside_check = is_point_valid(self.boundary_vertices, p, self.holes)
-					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
-
-					if inside_check and feasibility_check:
-						cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
-						cell_graph.add_edge(b_name, vb_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
-						self.logger.write('\t- {} <--X--> {} = {} - Success!\n'.format(vb_name, b_name, p))
 
 					else:
 						self.logger.write('\t- {} X {} = {} - Failure! ||| INSIDE: {} ||| FEASIBLE: {}\n'.format(vb_name, b_name, p, inside_check, feasibility_check))

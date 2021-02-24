@@ -355,24 +355,31 @@ class VNode:
 			self.neighbour_order = [(np.sum(conn[0].point - self.point, conn)) for _, conn in self.neighbours.items()]
 			self.neighbour_order.sort(reverse=self.is_descending)
 
+	def get_next_from(self, edge_name):
+		if self.to_be_sorted:
+			pass
+
 class VGraph:
 
 	def __init__(self):
 		self.nodes = dict()
 
+	def add_node(self, v):
+		if self.nodes.get(v.name) is None:
+			self.nodes[v.name] = v
+
 	def add_edge(self, v1, v2, edge):
-		if self.nodes.get(v1) is None:
-			# self.nodes[v1] = dict()
+		if self.nodes.get(v1.name) is None:
 			self.nodes[v1.name] = v1
 
-		if self.nodes.get(v2) is None:
-			# self.nodes[v2] = dict()
+		if self.nodes.get(v2.name) is None:
 			self.nodes[v2.name] = v2
 
 		self.nodes[v1.name].add_neighbour(edge, v2)
 
-		# self.nodes[v1][edge.name] = (edge, v2)
-		# self.nodes[v2][edge.name] = (edge, v1)
+	def preprocessing(self):
+		for _, node in self.nodes.items():
+			node.sort_neighbours()
 
 	def traverse(self, logger=None):
 		if len(self.nodes) < 3:
@@ -380,9 +387,11 @@ class VGraph:
 
 		traversal = []
 		stack = deque()
+		# start = self.nodes.keys()[0]
 		start = self.nodes.keys()[0]
-		stack.append(start)
+		stack.append(self.nodes[start])
 		visited = dict()
+		last_visited_edge = None
 
 		while len(stack) > 0:
 			vnode = stack.pop()
@@ -402,6 +411,25 @@ class VGraph:
 
 			if not found:
 				break
+
+		# while len(stack) > 0:
+		# 	vnode = stack.pop()
+		# 	found = False
+
+		# 	for _, (edge, nb_node) in self.nodes[vnode].items():
+		# 		if visited.get(edge.name) is None:
+		# 			stack.append(nb_node)
+		# 			visited[edge.name] = True
+
+		# 			if logger is not None:
+		# 				logger.write("\t *** Traversed node {}, {}\n".format(edge.name, edge.point))
+
+		# 			traversal.append(edge)
+		# 			found = True
+		# 			break
+
+		# 	if not found:
+		# 		break
 
 		# while len(stack) > 0:
 		# 	vnode = stack.pop()

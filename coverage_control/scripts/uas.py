@@ -538,19 +538,25 @@ class UAS:
 				n_i, m_i, vb_name = vbisectors[i]
 				d_i = m_i.dot(n_i)
 
-				vector_i = self.position - m_i
-				angle_i = np.arctan2(vector_i[1], vector_i[0])
-				descending_order = (angle_i >= np.pi * 0.5 or angle_i < - np.pi * 0.5)
-				v_node_i = VNode(vb_name, m_i, sorting=True, descending=descending_order)
+				v_node_i = cell_graph.nodes.get(vb_name)
+				if v_node_i is None:
+					vector_i = self.position - m_i
+					angle_i = np.arctan2(vector_i[1], vector_i[0])
+					descending_order = (angle_i >= np.pi * 0.5 or angle_i < - np.pi * 0.5)
+					v_node_i = VNode(vb_name, m_i, sorting=True, descending=descending_order)
+					cell_graph.add_node(v_node_i)
 
 				for j in range(i + 1, len(vbisectors)):
 					n_j, m_j, b_name = vbisectors[j]
 					d_j = m_j.dot(n_j)
 
-					vector_j = self.position - m_j
-					angle_j = np.arctan2(vector_j[1], vector_j[0])
-					descending_order = (angle_j >= np.pi * 0.5 or angle_j < - np.pi * 0.5)
-					v_node_i = VNode(vb_name, m_i, sorting=True, descending=descending_order)
+					v_node_j = cell_graph.nodes.get(b_name)
+					if v_node_j is None:
+						vector_j = self.position - m_j
+						angle_j = np.arctan2(vector_j[1], vector_j[0])
+						descending_order = (angle_j >= np.pi * 0.5 or angle_j < - np.pi * 0.5)
+						v_node_j = VNode(b_name, m_j, sorting=True, descending=descending_order)
+						cell_graph.add_node(v_node_j)
 
 					try:
 						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
@@ -568,10 +574,10 @@ class UAS:
 					feasibility_check, diff = self.check_feasibility(A_cell, b_cell, p)
 
 					if inside_check and feasibility_check:
-						# cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
-						# cell_graph.add_edge(b_name, vb_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
-						cell_graph.add_edge(v_node_i, v_node_j, VEdge("P_{}_{}".format(vb_name, b_name), p))
-						cell_graph.add_edge(v_node_j, v_node_i, VEdge("P_{}_{}".format(vb_name, b_name), p))
+						intersection = VEdge("P_{}_{}".format(vb_name, b_name), p)
+
+						cell_graph.add_edge(v_node_i, v_node_j, intersection)
+						cell_graph.add_edge(v_node_j, v_node_i, intersection)
 						self.logger.write('\t- {} <--X--> {} = {} - Success!\n'.format(vb_name, b_name, p))
 
 					else:
@@ -585,9 +591,14 @@ class UAS:
 				n_i, m_i, vb_name = vbisectors[i]
 				d_i = m_i.dot(n_i)
 
+				v_node_i = cell_graph.nodes[vb_name]
+
 				for j in range(len(self.boundary)):
 					n_j, m_j, b_name = self.boundary[j]
 					d_j = m_j.dot(n_j)
+
+					v_node_j = VNode(b_name, m_j, sorting=False)
+					cell_graph.add_node(v_node_j)
 
 					try:
 						A_ = np.array([n_i.round(2), n_j.round(2)], dtype=float)
@@ -608,13 +619,14 @@ class UAS:
 					if inside_check and feasibility_check:
 						start_feasible = np.dot(n_i, self.boundary_vertices[j]) <= d_i + 0.5
 						end_feasible = np.dot(n_i, self.boundary_vertices[k]) <= d_i + 0.5
+						intersection = VEdge("P_{}_{}".format(vb_name, b_name), p)
 
 						if start_feasible:
-							cell_graph.add_edge(b_name, vb_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+							cell_graph.add_edge(v_node_j, v_node_i, intersection)
 							self.logger.write('\t- {} --X--> {} = {} - Success!\n'.format(b_name, vb_name, p))
 
 						elif end_feasible:
-							cell_graph.add_edge(vb_name, b_name, VEdge("P_{}_{}".format(vb_name, b_name), p))
+							cell_graph.add_edge(v_node_i, v_node_j, intersection)
 							self.logger.write('\t- {} --X--> {} = {} - Success!\n'.format(vb_name, b_name, p))
 
 						else:
@@ -694,9 +706,23 @@ class UAS:
 				feasibility, diff = self.check_feasibility(A_cell, b_cell, v)
 
 				if feasibility:
-					first, second = "B_{}{}".format(k, i), "B_{}{}".format(i, j)
+					# prev_m = (self.boundary_vertices[k] + v) * 0.5
+					# next_m = (v + self.boundary_vertices[j]) * 0.5
+
+					first = cell_graph.nodes.get("B_{}{}".format(k, i))
+					if first is None:
+						# first = VNode("B_{}{}".format(k, i), prev_m, sorting=False)
+						first = VNode("B_{}{}".format(k, i), self.boundary[k][1], sorting=False)
+						cell_graph.add_node(first)
+
+					second = cell_graph.nodes.get("B_{}{}".format(i, j))
+					if second is None:
+						# second = VNode("B_{}{}".format(i, j), next_m, sorting=False)
+						second = VNode("B_{}{}".format(i, j), self.boundary[i][1], sorting=False)
+						cell_graph.add_node(second)
+
 					cell_graph.add_edge(first, second, VEdge("BND_{}".format(i), v))
-					self.logger.write('\t- {} X {} = {} - Success!\n'.format(first, second, v))
+					self.logger.write('\t- {} X {} = {} - Success!\n'.format(first.name, second.name, v))
 
 				else:
 					self.logger.write('\t- Boundary vertex {} - Failure! ||| INFEASIBLE, diff: {}\n'.format(v, diff))
@@ -704,6 +730,7 @@ class UAS:
 
 
 			# self.voronoi_cell = cell_graph.traverse()
+			cell_graph.preprocessing()
 			self.voronoi_cell = cell_graph.traverse(self.logger)
 
 			self.logger.write("\n***********\n************\n")

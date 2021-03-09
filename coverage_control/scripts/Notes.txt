@@ -1,0 +1,54 @@
+Notes
+-----
+
+* Define the problem of interest
+	- Partition
+	- Task Allocation
+	- Movement to the execution-start point, if necessary
+	- Task Execution
+
+* Define the factors to consider
+	- Multiple holonomic robot setup as a swarm (preferably quadrotors)
+		-- Distributed optimization and execution
+		-- Kinematic and dynamic constraints over motion
+
+	- Minimal energy consumption
+		-- Minimal number of turning maneuvers 
+			--- At the expense of more overlaps
+
+		-- Minimal jerk, snap
+
+	- Minimizing total completion time
+
+	- Convex / Non-convex polygonal environments
+	- Convex / Non-convex polygonal obstacles
+	- Known / Unknown environments
+	- Uniform / Non-uniform environments
+
+	- Limited sensing and/or communication
+
+	- Keeping uncovered region of the whole environment a connected shape
+	- Connectivity constraints, if necessary and/or applicable
+	- Collision avoidance - separation rule of Reynolds’ flocking
+	- Cohesion behaviour based on shared information
+
+	- Robot failure cases (Fault Tolerance)
+		-- Communication failures
+		-- Mechanical failures
+
+	- Motion planning support in case of undesired local minima traps
+
+* Consider the forms of multi-robot coverage problem
+	- Complete coverage (requires steady motion)
+		-- Sweep-like motion
+		-- Frontier based
+
+	- Locational optimization
+	- Pursuit-evasion or capture behaviour
+
+* Consider the different solution to the different forms of the problem
+	- FILL HERE
+
+* Complexity analysis of previous approaches
+
+* Complexity analysis of the proposed approach and/or algorithms

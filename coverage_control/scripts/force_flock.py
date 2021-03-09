@@ -34,6 +34,8 @@ class Agent:
 		self.r_sense = 3.0
 		self.cand_size = 10
 		self.sigma = 2.
+		self.gain_rep = 1.0
+		self.C_frict = 1.0
 
 		self.boundary = []
 		for i in range(len(globals()['boundary'])):
@@ -72,7 +74,42 @@ class Agent:
 	def alignment_gain(self, q):
 		return q[0] * np.cos(self.hdg) + q[1] * np.sin(self.hdg)
 
+	def braking_curve(self, r, a, p):
+		if r <= 0:
+			return 0
+
+		elif 0 < r * p < a / p:
+			return r * p
+
+		else:
+			return np.sqrt(2. * a * r - a ** 2 / p ** 2)
+
 	def repulsion(self):
+		force = np.zeros(2)
+
+		for aid, state in self.sTable.items():
+			if aid == self.aid:
+				continue
+
+			## Vasarhely, Viragh, ..,, Vicsek
+			direction = self.p - state['pos']
+			norm = np.linalg.norm(direction)
+			# if norm < self.r_safe:
+			# 	force += self.gain_rep * (self.r_safe - norm) * direction / norm
+
+			# Veysel Gazi
+			unit_repulsion = direction #/ norm
+			force += unit_repulsion * self.b / (norm - 2. * self.r_safe) ** 2
+
+		# for (n_i, m_i) in self.boundary:
+		# 	rep = np.dot(m_i - self.p, n_i)
+
+		# 	if rep <= self.r_safe:
+		# 		force += rep * n_i * self.b / (norm - 2. * self.r_safe) ** 2
+
+		return force
+
+	def alignment(self):
 		force = np.zeros(2)
 
 		for aid, state in self.sTable.items():
@@ -81,14 +118,35 @@ class Agent:
 
 			direction = self.p - state['pos']
 			norm = np.linalg.norm(direction)
-			unit_repulsion = direction #/ norm
-			force += unit_repulsion * self.b / (norm - 2. * self.r_safe) ** 2
+			vel_diff = self.v - state['vel']
+			vel_diff_norm = np.linalg.norm(vel_diff)
+
+			v_frict = 2.0
+			a_frict = 0.4
+			p_frict = 1.0
+			r_frict = 0.5 * a_frict * (v_frict / a_frict) ** 2
+
+			v_frictmax = max(v_frict, self.braking_curve(norm - r_frict, a_frict, p_frict))
+
+			if vel_diff_norm > v_frictmax:
+				force += self.C_frict * (vel_diff_norm - v_frictmax) * vel_diff / vel_diff_norm
+
+		return force
+
+	def shill(self):
+		force = np.zeros(2)
 
 		for (n_i, m_i) in self.boundary:
-			rep = np.dot(m_i - self.p, n_i)
+			distance = np.dot(n_i, self.p - m_i)
+			# norm = np.linalg.norm(direction)
 
-			if rep <= self.r_safe:
-				force += rep * n_i * self.b / (norm - 2. * self.r_safe) ** 2
+			v_shillmax = self.braking_curve(distance - self.r_safe, 0.4, 1.0)
+			v_s = n_i * distance
+			vel_diff = self.v - v_s
+			vel_diff_norm = np.linalg.norm(vel_diff)
+
+			if vel_diff_norm > v_shillmax:
+				force += (vel_diff_norm - v_shillmax) * vel_diff / vel_diff_norm
 
 		return force
 
@@ -136,8 +194,14 @@ class Agent:
 				self.v = np.zeros(2)
 
 				F_rep = self.repulsion()
-				F_att = self.attraction()
-				F_sum = F_rep + F_att
+				# F_att = self.attraction()
+				# F_sum = F_rep + F_att
+
+				# F_alg = self.alignment()
+				F_bnd = self.shill()
+				F_sum = F_rep + F_bnd
+				# F_sum = F_rep + F_att + F_bnd
+				# F_sum = F_rep + F_att + F_alg + F_bnd
 
 				norm = np.linalg.norm(F_sum)
 				if norm > self.vmax:

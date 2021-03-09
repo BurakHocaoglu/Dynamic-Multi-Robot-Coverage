@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from utils import *
-# from map_manager import *
 
 import os
 import matplotlib.pyplot as plt
@@ -11,9 +10,7 @@ import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
 
 from coverage_control.msg import FlightState, FlightStateCompressed, VCell, SensingInfo
-
 from coverage_control.srv import SetInitPos
-# from coverage_control.msg import FlightState, VCell
 
 __COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0.99,0), (0.99,0,0.99),
 			(0,0.99,0.99), (0.99,0,0.5)]
@@ -30,6 +27,8 @@ class Monitor:
 		self.uas_y_coords = None
 		self.arena = None
 		self.args = dict()
+		self.boundary_polygon = None
+		self.obstacle_polygons = dict()
 		# self.map_manager = None
 		self.grid_map = None
 		self.grid_dims = None
@@ -128,7 +127,8 @@ class Monitor:
 		while i < self.args['uas_count']:
 			p = np.random.uniform(low_limit, high_limit, (2,))
 
-			if is_point_valid(self.args['boundary'], p, self.args['obstacles']):
+			# if is_point_valid(self.args['boundary'], p, self.args['obstacles']):
+			if is_point_valid(self.boundary_polygon, p, self.obstacle_polygons):
 				valid = True
 
 				for sample in valid_samples:
@@ -211,6 +211,7 @@ class Monitor:
 				rospy.loginfo('Monitor has set space limits from X({0}) to Y({1}).'.format(self.args['xlim'], self.args['ylim']))
 
 				self.args['boundary'] = _boundary
+				self.boundary_polygon = Polygon(_boundary)
 				# sorted_boundary = angular_sort(np.mean(self.args['boundary'], axis=0), self.args['boundary'])
 				# self.arena = plt.Polygon(sorted_boundary, color=(0, 0, 0), fill=False)
 				self.arena = plt.Polygon(self.args['boundary'], color=(0, 0, 0), fill=False)
@@ -249,7 +250,9 @@ class Monitor:
 
 				for hn, hv in obstacles.items():
 					print('Hole {}'.format(hn))
-					self.holes[hn] = [np.array(v, dtype=float) for v in hv]
+					self.obstacle_polygons[hn] = Polygon(hv)
+					self.holes[hn] = np.array(hv, dtype=float)
+					# self.holes[hn] = [np.array(v, dtype=float) for v in hv]
 
 					for v in hv:
 						print('\t{}'.format(v))

@@ -1,0 +1,71 @@
+Hello there,
+
+I've been using CGAL in a distributed swarm simulation application with ROS to enable disjoint processes to communicate with each other. I have an issue of occasional errors in visibility polygon computation in general case (i.e. environment with holes), which takes place periodically at some frequency - when the agent moves, the visibility would potentially be changed.
+
+## Issue Details
+
+While coding, I looked at the example ```general_polygon_example.cpp```, but changed the exact kernel to inexact to reduce the type variety in the code. The example worked with inexact kernel, but in my simulation application, I get runtime errors from processes
+
+I call the following function in my code periodically in each controlling process:
+```
+void Agent::visibility_polygon() {
+	Polygon_2 new_visibility_poly;
+	Arrangement_2 local_env_context, current_visibility;
+
+	// vis_segments is of type std::vector<Segment_2>, which includes the outer environment boundary 
+	// and boundaries of the disjoint holes.
+	CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
+
+	Point_2 query(position(0), position(1)); // position of the agent, taken from a Eigen::Vector2d
+	CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
+	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
+
+	Face_const_handle *face = boost::get<Face_const_handle>(&obj);
+	TEV tev(local_env_context);
+
+	// THE ERROR OCCURS HERE !!!
+	Face_handle fh = tev.compute_visibility(query, *face, current_visibility);
+	// auto fh = tev.compute_visibility(query, *face, current_visibility);
+
+	coverage_control2::Polygon current_vpoly;
+	current_vpoly.id = id;
+
+	Arrangement_2::Ccb_halfedge_circulator curr = fh->outer_ccb();
+	Point_2 vpoly_vertex = curr->source()->point();
+	new_visibility_poly.push_back(vpoly_vertex);
+
+	geometry_msgs::Point vpoly_point;
+	vpoly_point.z = 0.;
+	vpoly_point.x = CGAL::to_double(vpoly_vertex.x());
+	vpoly_point.y = CGAL::to_double(vpoly_vertex.y());
+
+	current_vpoly.points.push_back(vpoly_point);
+
+	while (++curr != fh->outer_ccb()) {
+		vpoly_vertex = curr->source()->point();
+		new_visibility_poly.push_back(vpoly_vertex);
+
+		vpoly_point.x = CGAL::to_double(vpoly_vertex.x());
+		vpoly_point.y = CGAL::to_double(vpoly_vertex.y());
+		current_vpoly.points.push_back(vpoly_point);
+	}
+
+	vpoly_pub.publish(current_vpoly);
+	current_visibility_poly = new_visibility_poly;
+}
+```
+At the specified error line, I get a runtime error of ```CGAL::bad_object_cast: failed conversion using CGAL::object_cast```. This occurs quite often, but sometimes it may not throw this exception. 
+
+## Source Code
+
+_If your issue arises by using CGAL in your own source code, please provide a minimalist example that we can compile easily to reproduce the bug. If your issue arises from using a CGAL program (demo, example, etc.), please let us know which one. Helping you solving an issue is much easier and efficient if we can reproduce it._
+
+## Environment
+
+* Operating system: Ubuntu 16.04.6 LTS 64-bit
+* Compiler: g++ 5.4.0 (through catkin build ~ cmake)
+* Release or debug mode: Release
+* Specific flags used: -std=gnu+11 -fext-numeric-literals
+* CGAL version: 5.3
+* Boost version: 1.66
+* Other libraries versions if used (Eigen, TBB, etc.): Eigen-3.3.7

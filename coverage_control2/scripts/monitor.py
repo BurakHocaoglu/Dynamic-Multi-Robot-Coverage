@@ -3,7 +3,9 @@
 
 import sys
 import time
+import json
 import rospy
+import signal
 import traceback
 import numpy as np
 
@@ -29,6 +31,7 @@ all_vpolygons = dict()
 all_cvx_voronoi = dict()
 all_vl_voronoi = dict()
 motion_history = dict()
+all_vlv_history = dict()
 
 exp_region = []
 region_patch = None
@@ -113,6 +116,11 @@ def vlv_poly_cb(msg):
 														  color=globals()["__COLORS"][msg.id], 
 														  alpha=0.3)
 
+		if globals()["all_vlv_history"].get(msg.id) is None:
+			globals()["all_vlv_history"][msg.id] = []
+
+		globals()["all_vlv_history"][msg.id].append(projected_poly)
+
 		# if msg.id == globals()["visibility_focus_id"]:
 		# 	print("{} - {}".format(msg.id, projected_poly))
 
@@ -189,9 +197,22 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 				if vlvpoly is not None:
 					ax.add_patch(vlvpoly)
 
+def customSigIntHandler(signum, frame):
+	# for aid, vlv_history in globals()["all_vlv_history"].items():
+	# 	with open("Agent{}_VLV.json".format(aid), "w") as H:
+	# 		pass
+
+	with open("all_vlv_history.json", "w") as H:
+		json.dump(globals()["all_vlv_history"], H, indent=4)
+
+	print("Dumped all VLV history.")
+
 if __name__ == "__main__":
 	agent_count = int(sys.argv[1])
-	rospy.init_node("monitor", anonymous=False)
+	# rospy.init_node("monitor", anonymous=False)
+	rospy.init_node("monitor", anonymous=False, disable_signals=True)
+
+	signal.signal(signal.SIGINT, customSigIntHandler)
 
 	states_sub = rospy.Subscriber("/states", AgentState, state_cb, queue_size=20)
 	vpoly_sub = rospy.Subscriber("/visibility_polys", Polygon, vpoly_cb, queue_size=20)

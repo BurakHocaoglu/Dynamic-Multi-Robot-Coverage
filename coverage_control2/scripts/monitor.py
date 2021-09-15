@@ -117,12 +117,13 @@ def vlv_poly_cb(msg):
 														  alpha=0.3)
 
 		if globals()["all_vlv_history"].get(msg.id) is None:
-			globals()["all_vlv_history"][msg.id] = []
+			globals()["all_vlv_history"][msg.id] = dict()
+			globals()["all_vlv_history"][msg.id]["position"] = []
+			globals()["all_vlv_history"][msg.id]["polygon"] = []
 
-		globals()["all_vlv_history"][msg.id].append(projected_poly)
-
-		# if msg.id == globals()["visibility_focus_id"]:
-		# 	print("{} - {}".format(msg.id, projected_poly))
+		# globals()["all_vlv_history"][msg.id].append(projected_poly)
+		globals()["all_vlv_history"][msg.id]["position"].append((msg.position.x, msg.position.y))
+		globals()["all_vlv_history"][msg.id]["polygon"].append(projected_poly)
 
 	else:
 		print("{} - Invalid poly".format(msg.id))
@@ -198,12 +199,14 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 					ax.add_patch(vlvpoly)
 
 def customSigIntHandler(signum, frame):
-	# for aid, vlv_history in globals()["all_vlv_history"].items():
-	# 	with open("Agent{}_VLV.json".format(aid), "w") as H:
-	# 		pass
+	for aid, vlv_history in globals()["all_vlv_history"].items():
+		with open("Agent{}_VLV.json".format(aid), "w") as H:
+			json.dump(vlv_history, H, indent=4)
 
-	with open("all_vlv_history.json", "w") as H:
-		json.dump(globals()["all_vlv_history"], H, indent=4)
+		print("Dumped Agent {} VLV history.".format(aid))
+
+	# with open("all_vlv_history.json", "w") as H:
+	# 	json.dump(globals()["all_vlv_history"], H, indent=4)
 
 	print("Dumped all VLV history.")
 

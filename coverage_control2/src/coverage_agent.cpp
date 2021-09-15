@@ -117,6 +117,8 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 		actual_region = Polygon_with_holes_2(c_bounds, 
 											 c_holes.begin(), 
 											 c_holes.end());
+
+		CGAL::insert_non_intersecting_curves(environment_arr, vis_segments.begin(), vis_segments.end());
 	}
 }
 
@@ -176,7 +178,7 @@ void Agent::broadcast() {
 
 	current_workload = CGAL::to_double(the_workload);
 
-	ROS_INFO("%s - current workload: %.3f", name.c_str(), current_workload);
+	// ROS_INFO("%s - current workload: %.3f", name.c_str(), current_workload);
 
 	current_state.workload = current_workload;
 
@@ -282,16 +284,29 @@ void Agent::step() {
 	}
 
 	visibility_polygon();
-	ROS_INFO("%s has computed visibility!", name.c_str());
+	// ROS_INFO("%s has computed visibility!", name.c_str());
 
 	get_voronoi_cell_raw(neighbour_segments, agents_to_consider, A, b);
-	ROS_INFO("%s converted visibility into polygon!", name.c_str());
+	// ROS_INFO("%s converted visibility into polygon!", name.c_str());
 
 	visibility_limited_voronoi();
-	ROS_INFO("%s has computed limited sensing voronoi cell!", name.c_str());
+	// ROS_INFO("%s has computed limited sensing voronoi cell!", name.c_str());
 
-	build_local_skeleton();
-	ROS_INFO("%s has built local skeleton structure!", name.c_str());
+	if (b_settings.centroid_alg == CentroidAlgorithm::UNKNOWN) {
+		b_settings.stationary = true;
+		ROS_WARN("%s - does not know a valid centroid algorithm!", name.c_str());
+	} else {
+		if (b_settings.centroid_alg == CentroidAlgorithm::GEOMETRIC) {
+			compute_geometric_centroid();
+		} else if (b_settings.centroid_alg == CentroidAlgorithm::GEODESIC_APPROXIMATE) {
+			build_local_skeleton();
+		} else if (b_settings.centroid_alg == CentroidAlgorithm::GEODESIC_EXACT) {
+			ROS_WARN("%s - does not have a valid exact geodesic centroid algorithm!", name.c_str());
+		}
+	}
+
+	// build_local_skeleton();
+	// ROS_INFO("%s has built local skeleton structure!", name.c_str());
 
 	if (b_settings.stationary) 
 		return;
@@ -322,46 +337,44 @@ void Agent::step() {
 
 	if (!is_point_valid(goal)) {
 		ROS_WARN("%s - would move towards an invalid goal!", name.c_str());
-		// goal = position;
 	}
 
-	// total_force += m_params.K_goal * (goal - position);
-	total_force += goal - position;
+	total_force += m_params.K_goal * (goal - position);
 
 	double mag = total_force.norm();
 	double ang_diff = wrapToPi(atan2(total_force[1], total_force[0]) - heading);
 	double u = m_params.K_linear * mag * cos(ang_diff);
 	double w = m_params.K_angular * mag * sin(ang_diff);
 
-	// double u = mag;
-
 	if (fabs(w) > m_params.wmax) 
-		w = copysign(1., m_params.wmax);
+		w = copysign(m_params.wmax, w);
 
 	clip_inplace(u, 0., m_params.umax);
 
-	if (mag > m_params.umax) 
-		total_force *= m_params.umax / mag;
+	Vector2d hdgVector(cos(heading), sin(heading));
+	velocity = u * hdgVector;
 
-	velocity(0) = u * cos(heading);
-	velocity(1) = u * sin(heading);
-	// velocity = total_force;
-
-	position += velocity * m_params.delta_t;
-	heading = wrapToPi(heading + w * m_params.delta_t);
+	// position += velocity * m_params.delta_t;
+	// heading = wrapToPi(heading + w * m_params.delta_t);
 	// heading = atan2(velocity(1), velocity(0));
+
+	position += velocity * 0.1;
+	heading = wrapToPi(heading + w * 0.1);
 }
 
 void Agent::visibility_polygon() {
 	Polygon_2 new_visibility_poly;
-	Arrangement_2 local_env_context, current_visibility;
-	CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
+	Arrangement_2 current_visibility;
+	// Arrangement_2 local_env_context, current_visibility;
+	// CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
 
 	Point_2 query(position(0), position(1));
-	CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
+	// CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
+	CGAL::Arr_naive_point_location<Arrangement_2> pl(environment_arr);
 	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
 
-	TEV tev(local_env_context);
+	// TEV tev(local_env_context);
+	TEV tev(environment_arr);
 
 	Face_handle fh;
 
@@ -411,9 +424,9 @@ void Agent::visibility_polygon() {
 void Agent::visibility_limited_voronoi() {
 	std::list<Polygon_with_holes_2> intersection_pieces;
 
-	ROS_INFO("%s - Intersecting - %d items with %d items", name.c_str(), 
-														   (int)current_visibility_poly.size(), 
-														   (int)current_cvx_voronoi.size());
+	// ROS_INFO("%s - Intersecting - %d items with %d items", name.c_str(), 
+	// 													   (int)current_visibility_poly.size(), 
+	// 													   (int)current_cvx_voronoi.size());
 
 	CGAL::intersection(current_visibility_poly, 
 					   current_cvx_voronoi, 
@@ -442,7 +455,7 @@ void Agent::visibility_limited_voronoi() {
 	} else if (n_pieces > 1) {
 		ROS_WARN("%s has multiple visibility and convex voronoi intersection!", name.c_str());
 	} else {
-		ROS_INFO("%s has computed visibility and convex voronoi intersection.", name.c_str());
+		// ROS_INFO("%s has computed visibility and convex voronoi intersection.", name.c_str());
 
 		Polygon_with_holes_2 intr_piece = intersection_pieces.front();
 
@@ -469,13 +482,13 @@ void Agent::build_local_skeleton() {
 	}
 
 	current_skeleton = CGAL::create_interior_straight_skeleton_2(current_work_region, K());
-	ROS_INFO("%s - created inner skeleton.", name.c_str());
+	// ROS_INFO("%s - created inner skeleton.", name.c_str());
 
 	if (current_skeleton->size_of_vertices() < 3)
 		ROS_WARN("%s - Too low skeletal node count!!", name.c_str());
 
 	SkeletalGraph skeletal_map(current_skeleton->size_of_vertices());
-	ROS_INFO("%s - Constructed skeletal map for %lu vertices!", name.c_str(), current_skeleton->size_of_vertices());
+	// ROS_INFO("%s - Constructed skeletal map for %lu vertices!", name.c_str(), current_skeleton->size_of_vertices());
 	// std::cout << name << " will have " << skeletal_map.getCount() << " vertices!\n";
 
 	std::unordered_map<int, bool> seen_edges;
@@ -502,8 +515,8 @@ void Agent::build_local_skeleton() {
 		seen_edges[htr->opposite()->id()] = true;
 	}
 
-	// goal = skeletal_map.getCentroid();
-	goal = (skeletal_map.getCentroid() + position) / 3.;
+	goal = skeletal_map.getCentroid();
+	// goal = (skeletal_map.getCentroid() + position) / 3.;
 
 	Point_2 cgal_point(goal(0), goal(1));
 	auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
@@ -525,6 +538,33 @@ void Agent::build_local_skeleton() {
 	// ROS_INFO("%s - Calculated approximate geodesic centroid.", name.c_str());
 
 	// goal = Vector2d(goal_cell.c.get<0>(), goal_cell.c.get<1>());
+}
+
+void Agent::compute_geometric_centroid() {
+	double cx = 0.0, cy = 0.0;
+	double area = CGAL::to_double(current_work_region.outer_boundary().area());
+
+	size_t nVertices = current_work_region.outer_boundary().size();
+	for (size_t i = 0; i < nVertices; i++) {
+		size_t j = (i + 1) % nVertices;
+
+		Point_2 p1 = current_work_region.outer_boundary().vertex(i);
+		Point_2 p2 = current_work_region.outer_boundary().vertex(j);
+
+		cx += (CGAL::to_double(p1.x()) + CGAL::to_double(p2.x())) * 
+		        (CGAL::to_double(p1.x()) * CGAL::to_double(p2.y()) - 
+		         CGAL::to_double(p2.x()) * CGAL::to_double(p1.y()));
+
+		cy += (CGAL::to_double(p1.y()) + CGAL::to_double(p2.y())) * 
+		        (CGAL::to_double(p1.x()) * CGAL::to_double(p2.y()) - 
+		         CGAL::to_double(p2.x()) * CGAL::to_double(p1.y()));
+	}
+
+	cx /= 6.0 * area;
+	cy /= 6.0 * area;
+
+	goal = Vector2d(cx, cy);
+	// ROS_INFO("%s - Geometric centroid: ")
 }
 
 void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 

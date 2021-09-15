@@ -30,6 +30,7 @@ class Agent {
 		void visibility_polygon();
 		void visibility_limited_voronoi();
 		void build_local_skeleton();
+		void compute_geometric_centroid();
 
 		void get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 
 								  uint8_t neighbour_count, 
@@ -79,6 +80,7 @@ class Agent {
 		Polygon_2_Array inflated_region_holes;
 
 		Polygon_with_holes_2 actual_region;
+		Arrangement_2 environment_arr;
 
 		std::vector<BoundarySegment> segments_to_avoid;
 		std::vector<Segment_2> vis_segments;

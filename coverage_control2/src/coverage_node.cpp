@@ -12,6 +12,7 @@ int main(int argc, char **argv) {
 	DebugLogConfig dcfg;
 
 	float frequency;
+	std::string centroid_alg;
 	MotionParameters m_params;
 	SensingParameters s_params;
 	BehaviourSettings b_settings;
@@ -89,6 +90,13 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
+	if (node.getParam("/centroid_alg", centroid_alg)) {
+		b_settings.centroid_alg = getAlgFromString(centroid_alg);
+	} else {
+		ROS_ERROR("Could not load behaviour settings!");
+		return 0;
+	}
+
 	if (node.getParam("/behaviours", behaviours)) {
 		b_settings.stationary = behaviours["stationary"];
 		b_settings.limited_sensing = behaviours["limited_sensing"];
@@ -123,14 +131,18 @@ int main(int argc, char **argv) {
 
 	ROS_INFO("%s has warmed up.", node_name.c_str());
 
+	// std::chrono::high_resolution_clock::time_point cycle_start, cycle_end;
 	while (ros::ok()) {
-		ros::Time cycle_start = ros::Time::now();
+		// ros::Time cycle_start = ros::Time::now();
+		// cycle_start = std::chrono::high_resolution_clock::now();
 
 		agent.broadcast();
 		agent.step();
 
 		ros::spinOnce();
-		ROS_INFO("%s - Took: %.5f", node_name.c_str(), (ros::Time::now() - cycle_start).toSec());
+		// cycle_end = std::chrono::high_resolution_clock::now();
+		// ROS_INFO("%s - Took: %.5f", node_name.c_str(), (ros::Time::now() - cycle_start).toSec());
+		// ROS_INFO("%s - Took: %ld", node_name.c_str(), std::chrono::duration_cast<std::chrono::microseconds>(cycle_end - cycle_start).count());
 		rate.sleep();
 	}
 

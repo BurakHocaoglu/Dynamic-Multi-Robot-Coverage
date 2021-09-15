@@ -25,7 +25,6 @@
 #include <typeinfo>
 #include <list>
 #include <vector>
-// #include <array>
 #include <limits>
 #include <random>
 #include <utility>
@@ -104,6 +103,13 @@ typedef std::pair<double, Vector2d> UtilityPair;
 typedef coverage_control2::AgentState AgentStateMsg;
 typedef coverage_control2::SetInitialPose SetInitialPose;
 
+enum CentroidAlgorithm {
+	UNKNOWN=0,
+	GEOMETRIC=1,
+	GEODESIC_APPROXIMATE=2,
+	GEODESIC_EXACT=3
+};
+
 struct MotionParameters {
 	double delta_t;
 	double attraction_const;
@@ -134,6 +140,7 @@ struct AgentState {
 };
 
 struct BehaviourSettings {
+	CentroidAlgorithm centroid_alg;
 	bool stationary;
 	bool limited_sensing;
 	bool flocking;
@@ -262,8 +269,8 @@ inline T deg2rad(const T degrees) {
 
 template <typename T>
 inline T wrapToPi(T radians) {
-	int m = (int)(radians / (2 * M_PI));
-	radians -= m * 2 * M_PI;
+	int m = (int)(radians / (2.0 * M_PI));
+	radians -= 2.0 * m * M_PI;
 
 	if (radians > M_PI)
 		radians -= 2.0 * M_PI;
@@ -287,6 +294,22 @@ template <typename T>
 inline T clip_inplace(const T& n, const T& lower, const T& upper) {
 	return std::max(lower, std::min(n, upper));
 }
+// ---------------------------------------------------------------------------------------------
+
+inline CentroidAlgorithm getAlgFromString(const std::string& s) {
+	if (s.compare("geometric") == 0)
+		return CentroidAlgorithm::GEOMETRIC;
+
+	else if (s.compare("geodesic_approximate") == 0) 
+		return CentroidAlgorithm::GEODESIC_APPROXIMATE;
+
+	else if (s.compare("geodesic_exact") == 0) 
+		return CentroidAlgorithm::GEODESIC_EXACT;
+
+	else 
+		return CentroidAlgorithm::UNKNOWN;
+}
+
 // ---------------------------------------------------------------------------------------------
 
 namespace bg = boost::geometry;

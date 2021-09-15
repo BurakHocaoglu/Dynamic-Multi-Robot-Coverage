@@ -91,8 +91,11 @@ Vector2d SkeletalGraph::getCentroid() {
 		return a < b;
 	});
 
-	// return (vertex_map[distInfo[0].second].point + vertex_map[distInfo[1].second].point) / 2.;
-	return vertex_map[distInfo[0].second].point + vertex_map[distInfo[1].second].point;
+	return (vertex_map[distInfo[0].second].point + vertex_map[distInfo[1].second].point) / 2.;
+	// return vertex_map[distInfo[0].second].point + vertex_map[distInfo[1].second].point;
+	// return (vertex_map[distInfo[0].second].point + 
+	// 		vertex_map[distInfo[1].second].point + 
+	// 		vertex_map[distInfo[2].second].point) / 3.;
 }
 // ---------------------------------------------------------------------------------------------
 

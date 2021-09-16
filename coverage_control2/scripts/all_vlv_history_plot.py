@@ -15,6 +15,9 @@ import matplotlib.animation as animation
 
 from functools import partial
 
+__COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0.99,0), (0.99,0,0.99),
+			(0,0.99,0.99), (0.99,0,0.5), (0.99,0.5,0), (0.,0.99,0.5), (0.5,0.5,0.5)]
+
 history = None
 limits = None
 stop = False
@@ -45,19 +48,20 @@ def animate_history(i, ax, lims, hist):
 		ax.add_patch(obs_patch)
 
 	if hist is not None:
-		i = min(len(hist["position"]) - 1, globals()["history_index"])
-		pos = hist["position"][i]
-		poly = hist["polygon"][i]
-		robot_color = (0., 0., 1.)
-		ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
-		ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3))
+		for aid, hist_piece in hist.items():
+			i = min(len(hist_piece["position"]) - 1, globals()["history_index"])
+			pos = hist_piece["position"][i]
+			poly = hist_piece["polygon"][i]
+			robot_color = globals()["__COLORS"][int(aid)]
+			ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
+			ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3))
 
-		skeleton = get_skeleton(poly)
-		for h in skeleton.halfedges:
-			if h.is_bisector:
-				p1 = h.vertex.point
-				p2 = h.opposite.vertex.point
-				plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+			skeleton = get_skeleton(poly)
+			for h in skeleton.halfedges:
+				if h.is_bisector:
+					p1 = h.vertex.point
+					p2 = h.opposite.vertex.point
+					plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
 
 def history_iterator(hist):
 	while not globals()["stop"] or globals()["history_index"] < len(hist):
@@ -74,6 +78,7 @@ if __name__ == "__main__":
 	signal.signal(signal.SIGINT, customSigintHandler)
 
 	exp_region = [[80., 80.], [80., -80.], [-80., -80.], [-80., 80.]]
+	exp_region = [[80., 100.], [80., -40.], [-80., -40.], [-80., 100.]]
 
 	xcoords, ycoords = zip(*exp_region)
 	xmin, xmax = min(xcoords), max(xcoords)
@@ -87,6 +92,12 @@ if __name__ == "__main__":
 	# 	"obs4": [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]],
 	# 	"obs5": [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]],
 	# }
+	exp_obstacles = {
+		"obs1": [[50., 90.], [40., 60.], [10., 60.], [20., 90.]],
+		"obs2": [[10., 10.], [30., 10.], [30., -30.], [10., -30.]],
+		"obs3": [[-70., 20.], [-40., 10.], [-70., -30.]],
+		"obs4": [[-20., 90.], [-20., 40.], [-50., 70.]],
+	}
 	for obs_name, obs in exp_obstacles.items():
 		obstacle_patches[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
 
@@ -96,9 +107,6 @@ if __name__ == "__main__":
 	if history is None:
 		print("Could not load history content!")
 		sys.exit(1)
-
-	assert(history.get("position") is not None and history.get("polygon") is not None and 
-		   len(history["position"]) > 0 and len(history["position"]) == len(history["polygon"]))
 
 	history_thread = threading.Thread(name="history_iterator", target=history_iterator, args=(history, ))
 

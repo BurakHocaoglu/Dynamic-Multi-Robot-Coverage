@@ -205,8 +205,8 @@ def customSigIntHandler(signum, frame):
 
 		print("Dumped Agent {} VLV history.".format(aid))
 
-	# with open("all_vlv_history.json", "w") as H:
-	# 	json.dump(globals()["all_vlv_history"], H, indent=4)
+	with open("all_vlv_history.json", "w") as H:
+		json.dump(globals()["all_vlv_history"], H, indent=4)
 
 	print("Dumped all VLV history.")
 

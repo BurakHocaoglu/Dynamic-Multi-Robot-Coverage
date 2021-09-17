@@ -216,10 +216,20 @@ void Agent::step() {
 	std::vector<Vector2d> constraints;
 	std::vector<BoundarySegment> neighbour_segments;
 
+	visibility_polygon();
+	// ROS_INFO("%s has computed visibility!", name.c_str());
+
 	std::unordered_map<uint8_t, AgentState>::iterator itr = neighbours.begin();
 	for (; itr != neighbours.end(); itr++) {
 		if (itr->first == id) 
 			continue;
+
+		// Point_2 cgal_point(itr->second.position(0), itr->second.position(1));
+		// auto inside_check = CGAL::oriented_side(cgal_point, current_visibility_poly);
+		// if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && 
+		// 	inside_check != CGAL::POSITIVE) {
+		// 	continue;
+		// }
 
 		// ROS_INFO("%s - processing ID %u ...", name.c_str(), itr->first);
 		Vector2d r_ij = itr->second.position - position;
@@ -248,7 +258,8 @@ void Agent::step() {
 			if (itr->second.workload > current_workload) {
 				total_force += m_params.K_attraction * r_ij * m_params.attraction_const / norm;
 			} else if (itr->second.workload < current_workload) {
-				total_force -= m_params.K_attraction * r_ij * m_params.attraction_const / norm;
+				// total_force -= m_params.K_attraction * r_ij * m_params.attraction_const / norm;
+				total_force -= m_params.K_repulsion * r_ij * m_params.attraction_const / norm;
 			}
 
 			BoundarySegment n_seg = {r_ij, m_ij};
@@ -283,8 +294,8 @@ void Agent::step() {
 		}
 	}
 
-	visibility_polygon();
-	// ROS_INFO("%s has computed visibility!", name.c_str());
+	// visibility_polygon();
+	// // ROS_INFO("%s has computed visibility!", name.c_str());
 
 	get_voronoi_cell_raw(neighbour_segments, agents_to_consider, A, b);
 	// ROS_INFO("%s converted visibility into polygon!", name.c_str());
@@ -358,19 +369,24 @@ void Agent::step() {
 	// heading = wrapToPi(heading + w * m_params.delta_t);
 	// heading = atan2(velocity(1), velocity(0));
 
-	position += velocity * 0.1;
+	if (ang_diff <= m_params.wmax)
+		position += velocity * 0.1;
+
+	// if (velocity.norm() <= 0.01) 
+	// 	ROS_WARN("%s - TOO SLOW!", name.c_str());
+
 	heading = wrapToPi(heading + w * 0.1);
 }
 
 void Agent::visibility_polygon() {
 	Polygon_2 new_visibility_poly;
-	Arrangement_2 current_visibility;
-	// Arrangement_2 local_env_context, current_visibility;
-	// CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
+	// Arrangement_2 current_visibility;
+	Arrangement_2 local_env_context, current_visibility;
+	CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
 
 	Point_2 query(position(0), position(1));
-	// CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
-	CGAL::Arr_naive_point_location<Arrangement_2> pl(environment_arr);
+	CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
+	// CGAL::Arr_naive_point_location<Arrangement_2> pl(environment_arr);
 	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
 
 	// TEV tev(local_env_context);
@@ -441,6 +457,8 @@ void Agent::visibility_limited_voronoi() {
 	if (n_pieces == 0) {
 		coverage_control2::Polygon current_vor_poly;
 		current_vor_poly.id = id;
+		current_vor_poly.position.x = position(0);
+		current_vor_poly.position.y = position(1);
 
 		VertexIterator v_itr = current_cvx_voronoi.vertices_begin();
 		for (; v_itr != current_cvx_voronoi.vertices_end(); v_itr++) {
@@ -461,6 +479,8 @@ void Agent::visibility_limited_voronoi() {
 
 		coverage_control2::Polygon current_vlv_poly;
 		current_vlv_poly.id = id;
+		current_vlv_poly.position.x = position(0);
+		current_vlv_poly.position.y = position(1);
 
 		VertexIterator v_itr = intr_piece.outer_boundary().vertices_begin();
 		for (; v_itr != intr_piece.outer_boundary().vertices_end(); v_itr++) {
@@ -564,7 +584,6 @@ void Agent::compute_geometric_centroid() {
 	cy /= 6.0 * area;
 
 	goal = Vector2d(cx, cy);
-	// ROS_INFO("%s - Geometric centroid: ")
 }
 
 void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 

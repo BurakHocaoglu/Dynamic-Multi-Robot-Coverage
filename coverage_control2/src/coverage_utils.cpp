@@ -55,10 +55,7 @@ void SkeletalGraph::addEdge(int vid1, Point_2 p1, int vid2, Point_2 p2) {
 // ---------------------------------------------------------------------------------------------
 // Copied from (and modified slightly, for Eigen::Matrix and extra functionality) 
 // https://github.com/vsmolyakov/cpp/blob/master/graphs/apsp_floyd_warshall.cpp
-Vector2d SkeletalGraph::getCentroid() {
-	// std::cout << graph << std::endl;
-	// std::cout << std::endl;
-
+Vector2d SkeletalGraph::getCentroid(bool immediate) {
 	for (int k = 0; k < count; k++) {
 		for (int i = 0; i < count; i++) {
 			for (int j = 0; j < count; j++) {
@@ -70,16 +67,18 @@ Vector2d SkeletalGraph::getCentroid() {
 
 	auto dists = graph.rowwise().sum();
 
-	// int min_idx = 0;
-	// double min_val = dists(0);
-	// for (size_t i = 1; i < count; i++) {
-	// 	if (min_val > dists(i)) {
-	// 		min_val = dists(i);
-	// 		min_idx = i;
-	// 	}
-	// }
+	if (immediate) {
+		int min_idx = 0;
+		double min_val = dists(0);
+		for (size_t i = 1; i < count; i++) {
+			if (min_val > dists(i)) {
+				min_val = dists(i);
+				min_idx = i;
+			}
+		}
 
-	// return vertex_map[min_idx].point;
+		return vertex_map[min_idx].point;
+	}
 
 	std::vector<std::pair<double, size_t> > distInfo(count);
 	for (size_t i = 0; i < count; i++) {
@@ -91,11 +90,21 @@ Vector2d SkeletalGraph::getCentroid() {
 		return a < b;
 	});
 
-	return (vertex_map[distInfo[0].second].point + vertex_map[distInfo[1].second].point) / 2.;
-	// return vertex_map[distInfo[0].second].point + vertex_map[distInfo[1].second].point;
-	// return (vertex_map[distInfo[0].second].point + 
-	// 		vertex_map[distInfo[1].second].point + 
-	// 		vertex_map[distInfo[2].second].point) / 3.;
+	// double pair_total = distInfo[0].first + distInfo[1].first;
+	double triple_total = distInfo[0].first + distInfo[1].first + distInfo[2].first;
+
+	// return (distInfo[0].first * vertex_map[distInfo[0].second].point + 
+	// 		distInfo[1].first * vertex_map[distInfo[1].second].point) / pair_total;
+
+	return (distInfo[0].first * vertex_map[distInfo[0].second].point + 
+			distInfo[1].first * vertex_map[distInfo[1].second].point + 
+			distInfo[2].first * vertex_map[distInfo[2].second].point) / triple_total;
+
+	// Vector2d centroid = (distInfo[0].first * vertex_map[distInfo[0].second].point + 
+	// 					 distInfo[1].first * vertex_map[distInfo[1].second].point + 
+	// 					 distInfo[2].first * vertex_map[distInfo[2].second].point) / triple_total;
+
+	
 }
 // ---------------------------------------------------------------------------------------------
 

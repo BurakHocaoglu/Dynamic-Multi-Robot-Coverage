@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.1...3.18)
 project(coverage_control2)
 
-add_compile_options(-std=gnu++11 -fext-numeric-literals)
+#add_compile_options(-std=gnu++11 -fext-numeric-literals)
+add_compile_options(-std=c++17 -fext-numeric-literals)
 
 find_package(catkin REQUIRED COMPONENTS
   gazebo_msgs
@@ -25,6 +26,8 @@ add_message_files(
    AgentState.msg
    AgentStateArray.msg
    Polygon.msg
+   HistoryStep.msg
+   PolygonWithHoles.msg
 )
 
 add_service_files(

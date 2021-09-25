@@ -12,6 +12,8 @@
 #include <geometry_msgs/Vector3.h>
 
 #include <coverage_control2/Polygon.h>
+#include <coverage_control2/HistoryStep.h>
+#include <coverage_control2/PolygonWithHoles.h>
 #include <coverage_control2/AgentState.h>
 #include <coverage_control2/SetInitialPose.h>
 
@@ -58,6 +60,9 @@
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 #include <CGAL/create_offset_polygons_from_polygon_with_holes_2.h>
 
+#include <CGAL/Gps_traits_2.h>
+#include <CGAL/offset_polygon_2.h>
+
 // #include "coverage_control2/geodesic_center.hpp"
 
 #include "dump_to_eps.h"
@@ -69,6 +74,7 @@ typedef CGAL::Polygon_2<K> Polygon_2;
 typedef CGAL::Polygon_with_holes_2<K> Polygon_with_holes_2;
 typedef Polygon_2::Vertex_iterator VertexIterator;
 typedef Polygon_2::Edge_const_iterator EdgeIterator;
+typedef Polygon_with_holes_2::Hole_iterator HoleIterator;
 
 typedef K::Line_2 Line_2;
 typedef K::Segment_2 Segment_2;
@@ -226,7 +232,7 @@ class SkeletalGraph {
 		int getVertexId(int vid, Point_2 p);
 		void addEdge(int vid1, Point_2 p1, int vid2, Point_2 p2);
 
-		Vector2d getCentroid();
+		Vector2d getCentroid(bool immediate=false);
 		uint32_t getCount();
 
 	private:

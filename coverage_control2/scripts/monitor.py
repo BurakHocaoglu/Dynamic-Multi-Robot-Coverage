@@ -20,7 +20,7 @@ import shapely.geometry as sg
 
 from std_srvs.srv import Trigger
 
-from coverage_control2.msg import AgentState, Polygon
+from coverage_control2.msg import AgentState, Polygon, HistoryStep, PolygonWithHoles
 from coverage_control2.srv import SetInitialPose, SetId, PrintMass
 
 __COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0.99,0), (0.99,0,0.99),
@@ -109,7 +109,12 @@ def voronoi_cb(msg):
 													   alpha=0.25)
 
 def vlv_poly_cb(msg):
-	projected_poly = [(v.x, v.y) for v in msg.points]
+	projected_poly = [(v.x, v.y) for v in msg.cell.outer_boundary.points]
+	projected_holes = []
+
+	for poly in msg.cell.holes:
+		projected_holes.append([(v.x, v.y) for v in poly.points])
+
 	if len(projected_poly) > 2:
 		globals()["all_vl_voronoi"][msg.id] = plt.Polygon(projected_poly, 
 														  fill=True, 
@@ -120,10 +125,12 @@ def vlv_poly_cb(msg):
 			globals()["all_vlv_history"][msg.id] = dict()
 			globals()["all_vlv_history"][msg.id]["position"] = []
 			globals()["all_vlv_history"][msg.id]["polygon"] = []
+			globals()["all_vlv_history"][msg.id]["holes"] = []
 
 		# globals()["all_vlv_history"][msg.id].append(projected_poly)
 		globals()["all_vlv_history"][msg.id]["position"].append((msg.position.x, msg.position.y))
 		globals()["all_vlv_history"][msg.id]["polygon"].append(projected_poly)
+		globals()["all_vlv_history"][msg.id]["holes"].append(projected_holes)
 
 	else:
 		print("{} - Invalid poly".format(msg.id))
@@ -179,24 +186,37 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 		x_hist, y_hist = zip(*(globals()["motion_history"][aid]))
 		ax.plot(x_hist, y_hist, color=robot_color)
 
-		if aid == globals()["visibility_focus_id"]:
-			if globals()["visibility_focus_level"] == 0:
-				# Visibility polygon visualization
-				vpoly = globals()["all_vpolygons"].get(aid)
-				if vpoly is not None:
-					ax.add_patch(vpoly)
+		if globals()["visibility_focus_level"] == 1:
+			cvxpoly = globals()["all_cvx_voronoi"].get(aid)
+			if cvxpoly is not None:
+				ax.add_patch(cvxpoly)
 
-			if globals()["visibility_focus_level"] == 1:
-				# Convex voronoi visualization
-				cvxpoly = globals()["all_cvx_voronoi"].get(aid)
-				if cvxpoly is not None:
-					ax.add_patch(cvxpoly)
+		elif globals()["visibility_focus_level"] == 2:
+			vlvpoly = globals()["all_vl_voronoi"].get(aid)
+			if vlvpoly is not None:
+				ax.add_patch(vlvpoly)
 
-			if globals()["visibility_focus_level"] == 2:
-				# Visibility limited voronoi visualization
-				vlvpoly = globals()["all_vl_voronoi"].get(aid)
-				if vlvpoly is not None:
-					ax.add_patch(vlvpoly)
+		# if aid == globals()["visibility_focus_id"]:
+		# 	if globals()["visibility_focus_level"] == 0:
+		# 		# Visibility polygon visualization
+		# 		vpoly = globals()["all_vpolygons"].get(aid)
+		# 		if vpoly is not None:
+		# 			ax.add_patch(vpoly)
+
+		# 	if globals()["visibility_focus_level"] == 1:
+		# 		# Convex voronoi visualization
+		# 		cvxpoly = globals()["all_cvx_voronoi"].get(aid)
+		# 		if cvxpoly is not None:
+		# 			ax.add_patch(cvxpoly)
+
+		# 	if globals()["visibility_focus_level"] == 2:
+		# 		# Visibility limited voronoi visualization
+		# 		vlvpoly = globals()["all_vl_voronoi"].get(aid)
+		# 		if vlvpoly is not None:
+		# 			ax.add_patch(vlvpoly)
+
+	# for aid, vlvpoly in globals()["all_vl_voronoi"].items():
+	# 	ax.add_patch(vlvpoly)
 
 def customSigIntHandler(signum, frame):
 	for aid, vlv_history in globals()["all_vlv_history"].items():
@@ -220,7 +240,7 @@ if __name__ == "__main__":
 	states_sub = rospy.Subscriber("/states", AgentState, state_cb, queue_size=20)
 	vpoly_sub = rospy.Subscriber("/visibility_polys", Polygon, vpoly_cb, queue_size=20)
 	cvx_vor_sub = rospy.Subscriber("/convex_voronoi", Polygon, voronoi_cb, queue_size=20)
-	vlv_poly_sub = rospy.Subscriber("/visibility_limited_voronoi", Polygon, vlv_poly_cb, queue_size=20)
+	vlv_poly_sub = rospy.Subscriber("/visibility_limited_voronoi", HistoryStep, vlv_poly_cb, queue_size=20)
 
 	vp_vis_focus_service = rospy.Service("/set_vp_vis_focus", SetId, handle_vp_focus)
 	vis_focus_level_service = rospy.Service("/set_vis_focus_level", SetId, handle_vis_level)

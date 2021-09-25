@@ -1,0 +1,2 @@
+coverage_control2/Polygon outer_boundary
+coverage_control2/Polygon[] holes

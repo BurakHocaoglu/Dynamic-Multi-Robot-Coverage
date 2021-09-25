@@ -13,10 +13,12 @@
 #                     [-40., 10.], [-80., 10.], [-80., -40.], [10., -30.], 
 #                     [10., 10.], [30., 10.], [30., -30.], [80., -40.], [70., 20.]]
 
-coverage_boundary: [[80., 80.], [80., -80.], [-80., -80.], [-80., 80.]]
-
 # coverage_boundary: [[80., 100.], [80., -40.], [-80., -40.], [-80., 100.]]
 
+# Coverage boundary (~ outer boundary should be simple and counter-clockwise oriented)
+coverage_boundary: [[80., 80.], [-80., 80.], [-80., -80.], [80., -80.]]
+
+# Coverage obstacles should be simple and clockwie oriented
 coverage_obstacles:
     # obs: [[-220., -190.], [-190., -220.], [-210., -230.], [-240., -190.]]
     #################
@@ -31,7 +33,7 @@ coverage_obstacles:
     # obs1: [[-60., 60.], [-20., 60.], [-20., 20.], [-60., 20.]]
     # obs2: [[20., 60.], [60., 60.], [60., 20.], [20., 20.]]
     obs3: [[20., -20.], [60., -20.], [60., -60.], [20., -60.]]
-    # obs4: [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]]
+    obs4: [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]]
     obs5: [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]]
     #################
     # obs1: [[-20., 50.], [-20., 40.], [20., 40.], [20., 50.]]
@@ -47,8 +49,8 @@ coverage_obstacles:
 
 motion_params:
     delta_t: 0.2
-    attraction_const: 0.2
-    repulsion_const: 0.2
+    attraction_const: 0.8
+    repulsion_const: 0.8
     vmax: 1.
     umax: 1.
     wmax: 0.5236 # pi / 6.
@@ -57,9 +59,9 @@ motion_params:
     safe_radius: 2.
     K_linear: 1.
     K_angular: 1.
-    K_repulsion: 1.
-    K_attraction: 1.
-    K_goal: 0.2
+    K_repulsion: 0.
+    K_attraction: 0.
+    K_goal: 0.4
 
 sensing_params:
     sigma_local: 2.

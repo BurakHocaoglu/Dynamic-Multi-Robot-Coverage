@@ -35,33 +35,37 @@ def get_skeleton(poly):
 	return sg.skeleton.create_interior_straight_skeleton(sgp)
 
 def animate_history(i, ax, lims, hist):
-	ax.clear()
-	ax.set_aspect("equal")
-	ax.set_title("History")
-	ax.set_xlim(lims[0] - 5., lims[2] + 5.)
-	ax.set_ylim(lims[1] - 5., lims[3] + 5.)
+	try:
+		ax.clear()
+		ax.set_aspect("equal")
+		ax.set_title("History")
+		ax.set_xlim(lims[0] - 5., lims[2] + 5.)
+		ax.set_ylim(lims[1] - 5., lims[3] + 5.)
 
-	if globals()["region_patch"] is not None:
-		ax.add_patch(globals()["region_patch"])
+		if globals()["region_patch"] is not None:
+			ax.add_patch(globals()["region_patch"])
 
-	for _, obs_patch in globals()["obstacle_patches"].items():
-		ax.add_patch(obs_patch)
+		for _, obs_patch in globals()["obstacle_patches"].items():
+			ax.add_patch(obs_patch)
 
-	if hist is not None:
-		for aid, hist_piece in hist.items():
-			i = min(len(hist_piece["position"]) - 1, globals()["history_index"])
-			pos = hist_piece["position"][i]
-			poly = hist_piece["polygon"][i]
-			robot_color = globals()["__COLORS"][int(aid)]
-			ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
-			ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3))
+		if hist is not None:
+			for aid, hist_piece in hist.items():
+				i = min(len(hist_piece["position"]) - 1, globals()["history_index"])
+				pos = hist_piece["position"][i]
+				poly = hist_piece["polygon"][i]
+				robot_color = globals()["__COLORS"][int(aid)]
+				ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
+				ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3))
 
-			skeleton = get_skeleton(poly)
-			for h in skeleton.halfedges:
-				if h.is_bisector:
-					p1 = h.vertex.point
-					p2 = h.opposite.vertex.point
-					plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+				skeleton = get_skeleton(poly)
+				for h in skeleton.halfedges:
+					if h.is_bisector:
+						p1 = h.vertex.point
+						p2 = h.opposite.vertex.point
+						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+	except Exception as e:
+		# raise e
+		print(traceback.format_exc())
 
 def history_iterator(hist):
 	while not globals()["stop"] or globals()["history_index"] < len(hist):
@@ -77,7 +81,7 @@ def customSigintHandler(signum, frame):
 if __name__ == "__main__":
 	signal.signal(signal.SIGINT, customSigintHandler)
 
-	exp_region = [[80., 80.], [80., -80.], [-80., -80.], [-80., 80.]]
+	# exp_region = [[80., 80.], [80., -80.], [-80., -80.], [-80., 80.]]
 	exp_region = [[80., 100.], [80., -40.], [-80., -40.], [-80., 100.]]
 
 	xcoords, ycoords = zip(*exp_region)
@@ -87,11 +91,11 @@ if __name__ == "__main__":
 	region_patch = plt.Polygon(list(exp_region), fill=False, color=(0., 0., 0.))
 
 	exp_obstacles = dict()
-	# exp_obstacles = {
-	# 	"obs3": [[20., -20.], [60., -20.], [60., -60.], [20., -60.]],
-	# 	"obs4": [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]],
-	# 	"obs5": [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]],
-	# }
+	exp_obstacles = {
+		# "obs3": [[20., -20.], [60., -20.], [60., -60.], [20., -60.]],
+		"obs4": [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]],
+		# "obs5": [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]],
+	}
 	exp_obstacles = {
 		"obs1": [[50., 90.], [40., 60.], [10., 60.], [20., 90.]],
 		"obs2": [[10., 10.], [30., 10.], [30., -30.], [10., -30.]],

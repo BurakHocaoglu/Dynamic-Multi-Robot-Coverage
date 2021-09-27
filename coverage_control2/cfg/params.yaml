@@ -1,5 +1,3 @@
-# coverage_boundary: [[-60., 50.], [-60., -40.], [50., -40.], [50., 50.]]
-
 # coverage_boundary: [[-80., 60.], [-20., 60.], [-20., 40.], [20., 40.], 
 #                     [20., 60.], [80., 60.], [80., 40.], [40., 40.], 
 #                     [40., 20.], [80., 20.], [80., -40.], [40., -40.], 
@@ -61,7 +59,7 @@ motion_params:
     K_angular: 1.
     K_repulsion: 0.
     K_attraction: 0.
-    K_goal: 0.4
+    K_goal: 0.2
 
 sensing_params:
     sigma_local: 2.

@@ -13,7 +13,6 @@ Agent::Agent(ros::NodeHandle& nh_, const std::string& name_, uint8_t id_) :
 
 	vpoly_pub = nh.advertise<coverage_control2::Polygon>("/visibility_polys", 1);
 	cvx_vor_pub = nh.advertise<coverage_control2::Polygon>("/convex_voronoi", 1);
-	// vl_voronoi_pub = nh.advertise<coverage_control2::Polygon>("/visibility_limited_voronoi", 1);
 	vl_voronoi_pub = nh.advertise<coverage_control2::HistoryStep>("/visibility_limited_voronoi", 1);
 	state_pub = nh.advertise<AgentStateMsg>("/states", 1);
 	state_sub = nh.subscribe("/states", 10, &Agent::state_cb, this);
@@ -116,13 +115,13 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 		inflated_region_holes.push_back(*(hole_pieces[0]));
 	}
 
-	actual_region = Polygon_with_holes_2(region_boundary, 
-										 region_holes.begin(), 
-										 region_holes.end());
+	// actual_region = Polygon_with_holes_2(region_boundary, 
+	// 									 region_holes.begin(), 
+	// 									 region_holes.end());
 
-	// actual_region = Polygon_with_holes_2(inflated_outer_boundary, 
-	// 									 inflated_region_holes.begin(), 
-	// 									 inflated_region_holes.end());
+	actual_region = Polygon_with_holes_2(inflated_outer_boundary, 
+										 inflated_region_holes.begin(), 
+										 inflated_region_holes.end());
 
 	CGAL::insert_non_intersecting_curves(environment_arr, vis_segments.begin(), vis_segments.end());
 }
@@ -133,10 +132,8 @@ bool Agent::ready() {
 
 bool Agent::is_point_valid(const Point_2& p) {
 	auto inside_check = CGAL::oriented_side(p, inflated_outer_boundary);
-	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && 
-		inside_check != CGAL::POSITIVE) {
+	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 		return false;
-	}
 
 	// if (inflated_outer_boundary.bounded_side(p) == CGAL::ON_UNBOUNDED_SIDE) 
 	// 	return false;
@@ -147,10 +144,8 @@ bool Agent::is_point_valid(const Point_2& p) {
 		// 	return false;
 
 		inside_check = CGAL::oriented_side(p, *itr);
-		if (inside_check == CGAL::ON_ORIENTED_BOUNDARY || 
-			inside_check == CGAL::POSITIVE) {
+		if (inside_check == CGAL::ON_ORIENTED_BOUNDARY || inside_check == CGAL::POSITIVE) 
 			return false;
-		}
 	}
 
 	return true;
@@ -182,6 +177,8 @@ void Agent::broadcast() {
 	current_workload = CGAL::to_double(the_workload);
 
 	// ROS_INFO("%s - current workload: %.3f", name.c_str(), current_workload);
+	// if (current_work_region.number_of_holes() > 0) 
+	// 	std::cout << name << " - holes!\n";
 
 	current_state.workload = current_workload;
 
@@ -219,7 +216,7 @@ void Agent::step() {
 	std::vector<Vector2d> constraints;
 	std::vector<BoundarySegment> neighbour_segments;
 
-	// visibility_polygon();
+	visibility_polygon();
 	// ROS_INFO("%s has computed visibility!", name.c_str());
 
 	std::unordered_map<uint8_t, AgentState>::iterator itr = neighbours.begin();
@@ -278,15 +275,6 @@ void Agent::step() {
 			values.push_back(r_ij.dot(m_ij) - m_params.physical_radius);
 			agents_to_consider++;
 		}
-	}
-
-	std::vector<BoundarySegment>::iterator seg_itr = segments_to_avoid.begin();
-	for (; seg_itr != segments_to_avoid.end(); seg_itr++) {
-		Vector2d vec = seg_itr->middle - position;
-
-		// if (seg_itr->normal.dot(vec) <= m_params.safe_radius) {
-		// 	total_force += m_params.K_repulsion * seg_itr->normal * m_params.repulsion_const / pow(vec.norm() - 2. * m_params.safe_radius, 2);
-		// }
 	}
 
 	VectorXd b(agents_to_consider);
@@ -349,6 +337,7 @@ void Agent::step() {
 	}
 
 	total_force += m_params.K_goal * (goal - position);
+	// total_force += m_params.K_goal * (target - position);
 
 	double mag = total_force.norm();
 	double ang_diff = wrapToPi(atan2(total_force[1], total_force[0]) - heading);
@@ -436,10 +425,6 @@ void Agent::visibility_polygon() {
 void Agent::visibility_limited_voronoi() {
 	std::list<Polygon_with_holes_2> intersection_pieces;
 
-	// ROS_INFO("%s - Intersecting - %d items with %d items", name.c_str(), 
-	// 													   (int)current_visibility_poly.size(), 
-	// 													   (int)current_cvx_voronoi.size());
-
 	// CGAL::intersection(current_visibility_poly, 
 	// 				   current_cvx_voronoi, 
 	// 				   std::back_inserter(intersection_pieces));
@@ -451,21 +436,6 @@ void Agent::visibility_limited_voronoi() {
 	int n_pieces = intersection_pieces.size();
 
 	if (n_pieces == 0) {
-		// coverage_control2::Polygon current_vor_poly;
-		// current_vor_poly.id = id;
-		// current_vor_poly.position.x = position(0);
-		// current_vor_poly.position.y = position(1);
-
-		// VertexIterator v_itr = current_cvx_voronoi.vertices_begin();
-		// for (; v_itr != current_cvx_voronoi.vertices_end(); v_itr++) {
-		// 	geometry_msgs::Point vor_point;
-		// 	vor_point.x = CGAL::to_double(v_itr->x());
-		// 	vor_point.y = CGAL::to_double(v_itr->y());
-		// 	current_vor_poly.points.push_back(vor_point);
-		// }
-
-		// vl_voronoi_pub.publish(current_vor_poly);
-
 		coverage_control2::HistoryStep hist_step;
 		hist_step.id = id;
 		hist_step.position.x = position(0);
@@ -482,25 +452,34 @@ void Agent::visibility_limited_voronoi() {
 		vl_voronoi_pub.publish(hist_step);
 
 		ROS_WARN("%s has no visibility and convex voronoi intersection! Sending voronoi...", name.c_str());
-	} else if (n_pieces > 1) {
-		ROS_WARN("%s has multiple visibility and convex voronoi intersection!", name.c_str());
 	} else {
-		Polygon_with_holes_2 intr_piece = intersection_pieces.front();
+		bool located = false;
+		Polygon_with_holes_2 intr_piece;
+		Point_2 position_cgal(position(0), position(1));
 
-		// coverage_control2::Polygon current_vlv_poly;
-		// current_vlv_poly.id = id;
-		// current_vlv_poly.position.x = position(0);
-		// current_vlv_poly.position.y = position(1);
+		if (n_pieces > 1) {
+			ROS_WARN("%s has multiple visibility and convex voronoi intersection!", name.c_str());
 
-		// VertexIterator v_itr = intr_piece.outer_boundary().vertices_begin();
-		// for (; v_itr != intr_piece.outer_boundary().vertices_end(); v_itr++) {
-		// 	geometry_msgs::Point vlvp_point;
-		// 	vlvp_point.x = CGAL::to_double(v_itr->x());
-		// 	vlvp_point.y = CGAL::to_double(v_itr->y());
-		// 	current_vlv_poly.points.push_back(vlvp_point);
-		// }
+			std::list<Polygon_with_holes_2>::iterator pwh_itr = intersection_pieces.begin();
+			for (; pwh_itr != intersection_pieces.end(); pwh_itr++) {
+				auto inside_check = CGAL::oriented_side(position_cgal, *pwh_itr);
+				if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+					continue;
 
-		// vl_voronoi_pub.publish(current_vlv_poly);
+				else {
+					intr_piece = *pwh_itr;
+					located = true;
+					break;
+				}
+			}
+		}
+
+		if (!located) {
+			intr_piece = intersection_pieces.front();
+			// ROS_WARN("%s - could not be located in one of the intersections!");
+		}
+
+		// intr_piece = intersection_pieces.front();
 
 		coverage_control2::HistoryStep hist_step;
 		hist_step.id = id;
@@ -532,30 +511,28 @@ void Agent::visibility_limited_voronoi() {
 		}
 
 		vl_voronoi_pub.publish(hist_step);
-
 		current_work_region = intr_piece;
 	}
 }
 
 void Agent::build_local_skeleton() {
 	if (current_work_region.outer_boundary().is_clockwise_oriented()) {
-		// poly.reverse_orientation();
 		ROS_WARN("%s - Work region is not CCW oriented!", name.c_str());
+		// current_work_region.outer_boundary().reverse_orientation();
+		goal = position;
+		// target = position;
+		return;
 	}
 
 	current_skeleton = CGAL::create_interior_straight_skeleton_2(current_work_region, K());
-	// ROS_INFO("%s - created inner skeleton.", name.c_str());
-
 	if (current_skeleton->size_of_vertices() < 3) {
 		ROS_WARN("%s - Too low skeletal node count!!", name.c_str());
 		goal = position;
+		// target = position;
 		return;
 	}
 
 	SkeletalGraph skeletal_map(current_skeleton->size_of_vertices());
-	// ROS_INFO("%s - Constructed skeletal map for %lu vertices!", name.c_str(), current_skeleton->size_of_vertices());
-	// std::cout << name << " will have " << skeletal_map.getCount() << " vertices!\n";
-
 	std::unordered_map<int, bool> seen_edges;
 
 	auto htr = current_skeleton->halfedges_begin();
@@ -580,35 +557,14 @@ void Agent::build_local_skeleton() {
 		seen_edges[htr->opposite()->id()] = true;
 	}
 
-	if (current_work_region.outer_boundary().size() == 3) {
-		compute_geometric_centroid();
-	} else {
-		goal = skeletal_map.getCentroid();
-	}
-
-	// goal = skeletal_map.getCentroid(current_work_region.outer_boundary().size() == 3);
-	// goal = (skeletal_map.getCentroid() + position) / 3.;
-
-	Point_2 cgal_point(goal(0), goal(1));
-	auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
-	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && 
-		inside_check != CGAL::POSITIVE) {
-		ROS_WARN("%s was going outside!", name.c_str());
-		goal = position;
-	}
-
-	// polygon_t cwr;
-	// VertexIterator v_itr = current_work_region.outer_boundary().vertices_begin();
-	// for (; v_itr != current_work_region.outer_boundary().vertices_end(); v_itr++) {
-	// 	bg::append(cwr.outer(), point_t(CGAL::to_double(v_itr->x()), CGAL::to_double(v_itr->y())));
+	// if (current_work_region.outer_boundary().size() == 3) {
+	// 	compute_geometric_centroid();
+	// } else {
+	// 	goal = skeletal_map.getCentroid();
 	// }
 
-	// ROS_INFO("%s - Work region polygon is constructed.", name.c_str());
-
-	// Cell goal_cell = getCentroidCell(cwr);
-	// ROS_INFO("%s - Calculated approximate geodesic centroid.", name.c_str());
-
-	// goal = Vector2d(goal_cell.c.get<0>(), goal_cell.c.get<1>());
+	goal = skeletal_map.getCentroid();
+	// target = goal;
 }
 
 void Agent::compute_geometric_centroid() {
@@ -635,6 +591,7 @@ void Agent::compute_geometric_centroid() {
 	cy /= 6.0 * area;
 
 	goal = Vector2d(cx, cy);
+	// target = Vector2d(cx, cy);
 }
 
 void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 
@@ -665,10 +622,8 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 			Point_2 cgal_point(p_intr(0), p_intr(1));
 
 			auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
-			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && 
-				inside_check != CGAL::POSITIVE) {
+			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 				continue;
-			}
 
 			if (neighbour_count > 0) {
 				VectorXd feasibility(neighbour_count);
@@ -704,10 +659,8 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 			Point_2 cgal_point(p_intr(0), p_intr(1));
 
 			auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
-			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && 
-				inside_check != CGAL::POSITIVE) {
+			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 				continue;
-			}
 
 			if (neighbour_count > 0) {
 				VectorXd feasibility(neighbour_count);

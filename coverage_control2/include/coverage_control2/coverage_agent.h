@@ -61,6 +61,7 @@ class Agent {
 		Vector2d position;
 		Vector2d velocity;
 		Vector2d goal;
+		Vector2d target;
 		double heading;
 		double current_workload;
 

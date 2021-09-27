@@ -2,7 +2,7 @@
 
 <launch>
 
-	<arg name="count" default="3" />
+	<arg name="count" default="4" />
 	<arg name="prefix" default="gdb -ex run --args" />
 
 	<rosparam command="load" file="$(find coverage_control2)/cfg/params.yaml" />
@@ -13,7 +13,7 @@
 	<node name="A1" pkg="coverage_control2" type="dist_coverage_node" args="1" output="screen" />
 	<node name="A2" pkg="coverage_control2" type="dist_coverage_node" args="2" output="screen" />
 	<node name="A3" pkg="coverage_control2" type="dist_coverage_node" args="3" output="screen" />
-	<!-- <node name="A4" pkg="coverage_control2" type="dist_coverage_node" args="4" output="screen" /> -->
+	<node name="A4" pkg="coverage_control2" type="dist_coverage_node" args="4" output="screen" />
 
 	<!-- <node name="A3" pkg="coverage_control2" type="dist_coverage_node" args="3" output="screen" />
 	<node name="A4" pkg="coverage_control2" type="dist_coverage_node" args="4" output="screen" /> -->

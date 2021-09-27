@@ -127,7 +127,6 @@ def vlv_poly_cb(msg):
 			globals()["all_vlv_history"][msg.id]["polygon"] = []
 			globals()["all_vlv_history"][msg.id]["holes"] = []
 
-		# globals()["all_vlv_history"][msg.id].append(projected_poly)
 		globals()["all_vlv_history"][msg.id]["position"].append((msg.position.x, msg.position.y))
 		globals()["all_vlv_history"][msg.id]["polygon"].append(projected_poly)
 		globals()["all_vlv_history"][msg.id]["holes"].append(projected_holes)
@@ -196,28 +195,6 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 			if vlvpoly is not None:
 				ax.add_patch(vlvpoly)
 
-		# if aid == globals()["visibility_focus_id"]:
-		# 	if globals()["visibility_focus_level"] == 0:
-		# 		# Visibility polygon visualization
-		# 		vpoly = globals()["all_vpolygons"].get(aid)
-		# 		if vpoly is not None:
-		# 			ax.add_patch(vpoly)
-
-		# 	if globals()["visibility_focus_level"] == 1:
-		# 		# Convex voronoi visualization
-		# 		cvxpoly = globals()["all_cvx_voronoi"].get(aid)
-		# 		if cvxpoly is not None:
-		# 			ax.add_patch(cvxpoly)
-
-		# 	if globals()["visibility_focus_level"] == 2:
-		# 		# Visibility limited voronoi visualization
-		# 		vlvpoly = globals()["all_vl_voronoi"].get(aid)
-		# 		if vlvpoly is not None:
-		# 			ax.add_patch(vlvpoly)
-
-	# for aid, vlvpoly in globals()["all_vl_voronoi"].items():
-	# 	ax.add_patch(vlvpoly)
-
 def customSigIntHandler(signum, frame):
 	for aid, vlv_history in globals()["all_vlv_history"].items():
 		with open("Agent{}_VLV.json".format(aid), "w") as H:
@@ -232,7 +209,6 @@ def customSigIntHandler(signum, frame):
 
 if __name__ == "__main__":
 	agent_count = int(sys.argv[1])
-	# rospy.init_node("monitor", anonymous=False)
 	rospy.init_node("monitor", anonymous=False, disable_signals=True)
 
 	signal.signal(signal.SIGINT, customSigIntHandler)

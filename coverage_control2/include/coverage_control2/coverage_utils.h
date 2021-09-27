@@ -35,20 +35,6 @@
 
 #include <Eigen/Dense>
 
-#include <boost/shared_ptr.hpp>
-
-#include <boost/graph/properties.hpp>
-#include <boost/graph/undirected_graph.hpp>
-#include <boost/graph/exterior_property.hpp>
-#include <boost/graph/floyd_warshall_shortest.hpp>
-#include <boost/graph/eccentricity.hpp>
-
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/geometries.hpp>
-#include <boost/geometry/geometries/point.hpp>
-#include <boost/geometry/geometries/box.hpp>
-#include <boost/geometry/arithmetic/arithmetic.hpp> 
-
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Triangular_expansion_visibility_2.h>
 #include <CGAL/Arrangement_2.h>
@@ -60,8 +46,8 @@
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 #include <CGAL/create_offset_polygons_from_polygon_with_holes_2.h>
 
-#include <CGAL/Gps_traits_2.h>
-#include <CGAL/offset_polygon_2.h>
+// #include <CGAL/Gps_traits_2.h>
+// #include <CGAL/offset_polygon_2.h>
 
 // #include "coverage_control2/geodesic_center.hpp"
 
@@ -171,59 +157,11 @@ struct DebugLogConfig {
 struct SkeletalNode {
 	int id;
 	Vector2d point;
-
-	// SkeletalNode() : id(0), point(0, 0) {}
-	// SkeletalNode(int _id, Vector2d _p) : id(_id), point(_p) {}
 };
 
 // struct SkeletalEdge {
 // 	double weight;
 // };
-
-// typedef boost::undirected_graph<SkeletalNode> Graph;
-// typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
-// typedef boost::graph_traits<Graph>::edge_descriptor Edge;
-
-// typedef boost::property_map<Graph, uint32_t SkeletalNode::*>::type NameMap;
-// typedef boost::constant_property_map<Edge, double> WeightMap;
-
-// typedef boost::exterior_vertex_property<Graph, double> DistanceProperty;
-// typedef DistanceProperty::matrix_type DistanceMatrix;
-// typedef DistanceProperty::matrix_map_type DistanceMatrixMap;
-
-typedef boost::property<boost::edge_weight_t, double> EdgeWeightProperty;
-typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, 
-							  SkeletalNode, EdgeWeightProperty> Graph;
-
-typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
-typedef boost::graph_traits<Graph>::edge_descriptor Edge;
-
-typedef boost::property_map<Graph, boost::edge_weight_t>::type WeightMap;
-
-typedef boost::exterior_vertex_property<Graph, double> DistanceProperty;
-typedef DistanceProperty::matrix_type DistanceMatrix;
-typedef DistanceProperty::matrix_map_type DistanceMatrixMap;
-
-typedef boost::exterior_vertex_property<Graph, double> EccentricityProperty;
-typedef EccentricityProperty::container_type EccentricityContainer;
-typedef EccentricityProperty::map_type EccentricityMap;
-
-class SkeletalBoostGraph {
-	public:
-		SkeletalBoostGraph();
-
-		Vertex createVertex(int vid, Point_2 p);
-
-		void addEdge(int vid1, Point_2 p1, int vid2, Point_2 p2);
-		void clear();
-		Vector2d getCentroid();
-		uint32_t getCount();
-
-	private:
-		Graph g;
-		uint32_t count;
-		std::map<uint32_t, Vertex> vertex_map;
-};
 
 class SkeletalGraph {
 	public:
@@ -233,7 +171,10 @@ class SkeletalGraph {
 		void addEdge(int vid1, Point_2 p1, int vid2, Point_2 p2);
 
 		Vector2d getCentroid(bool immediate=false);
+
 		uint32_t getCount();
+		Vector2d getVertexById(int id);
+		std::vector<Point_2> getVerticesAsCgalPoints();
 
 	private:
 		MatrixXd graph;
@@ -318,28 +259,28 @@ inline CentroidAlgorithm getAlgFromString(const std::string& s) {
 
 // ---------------------------------------------------------------------------------------------
 
-namespace bg = boost::geometry;
+// namespace bg = boost::geometry;
 
-typedef bg::model::point<double, 2, bg::cs::cartesian> point_t;
-typedef bg::model::polygon<point_t> polygon_t;
-typedef bg::model::box<point_t> box_t;
+// typedef bg::model::point<double, 2, bg::cs::cartesian> point_t;
+// typedef bg::model::polygon<point_t> polygon_t;
+// typedef bg::model::box<point_t> box_t;
 
-double getSegDistSq(const point_t& p, const point_t& a, const point_t& b) ;
+// double getSegDistSq(const point_t& p, const point_t& a, const point_t& b) ;
 
-double pointToPolygonDist(const point_t& point, const polygon_t& polygon);
+// double pointToPolygonDist(const point_t& point, const polygon_t& polygon);
 
-struct Cell {
-    Cell(const point_t& c_, double h_, const polygon_t& polygon)
-        : c(c_), h(h_), d(pointToPolygonDist(c, polygon)), max(d + h * std::sqrt(2)) { }
+// struct Cell {
+//     Cell(const point_t& c_, double h_, const polygon_t& polygon)
+//         : c(c_), h(h_), d(pointToPolygonDist(c, polygon)), max(d + h * std::sqrt(2)) { }
 
-    point_t c; // cell center
-    double h; // half the cell size
-    double d; // distance from cell center to polygon
-    double max; // max distance to polygon within a cell
-};
+//     point_t c; // cell center
+//     double h; // half the cell size
+//     double d; // distance from cell center to polygon
+//     double max; // max distance to polygon within a cell
+// };
 
-Cell getCentroidCell(const polygon_t& polygon);
+// Cell getCentroidCell(const polygon_t& polygon);
 
-point_t polylabel(const polygon_t& polygon, double precision = 1., bool debug = false);
+// point_t polylabel(const polygon_t& polygon, double precision = 1., bool debug = false);
 
 #endif // DIST_COVERAGE_UTILS_H

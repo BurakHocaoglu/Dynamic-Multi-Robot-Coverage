@@ -63,6 +63,7 @@ def animate_history(i, ax, lims, hist):
 						p1 = h.vertex.point
 						p2 = h.opposite.vertex.point
 						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+
 	except Exception as e:
 		# raise e
 		print(traceback.format_exc())
@@ -81,8 +82,8 @@ def customSigintHandler(signum, frame):
 if __name__ == "__main__":
 	signal.signal(signal.SIGINT, customSigintHandler)
 
-	# exp_region = [[80., 80.], [80., -80.], [-80., -80.], [-80., 80.]]
-	exp_region = [[80., 100.], [80., -40.], [-80., -40.], [-80., 100.]]
+	exp_region = [[80., 80.], [80., -80.], [-80., -80.], [-80., 80.]]
+	# exp_region = [[80., 100.], [80., -40.], [-80., -40.], [-80., 100.]]
 
 	xcoords, ycoords = zip(*exp_region)
 	xmin, xmax = min(xcoords), max(xcoords)
@@ -92,16 +93,16 @@ if __name__ == "__main__":
 
 	exp_obstacles = dict()
 	exp_obstacles = {
-		# "obs3": [[20., -20.], [60., -20.], [60., -60.], [20., -60.]],
-		"obs4": [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]],
-		# "obs5": [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]],
+		"obs3": [[20., -20.], [60., -20.], [60., -60.], [20., -60.]],
+    	"obs4": [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]],
+    	"obs5": [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]],
 	}
-	exp_obstacles = {
-		"obs1": [[50., 90.], [40., 60.], [10., 60.], [20., 90.]],
-		"obs2": [[10., 10.], [30., 10.], [30., -30.], [10., -30.]],
-		"obs3": [[-70., 20.], [-40., 10.], [-70., -30.]],
-		"obs4": [[-20., 90.], [-20., 40.], [-50., 70.]],
-	}
+	# exp_obstacles = {
+	# 	"obs1": [[50., 90.], [40., 60.], [10., 60.], [20., 90.]],
+	# 	"obs2": [[10., 10.], [30., 10.], [30., -30.], [10., -30.]],
+	# 	"obs3": [[-70., 20.], [-40., 10.], [-70., -30.]],
+	# 	"obs4": [[-20., 90.], [-20., 40.], [-50., 70.]],
+	# }
 	for obs_name, obs in exp_obstacles.items():
 		obstacle_patches[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
 

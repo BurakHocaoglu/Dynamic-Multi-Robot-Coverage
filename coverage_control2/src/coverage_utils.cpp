@@ -42,7 +42,8 @@ void SkeletalGraph::addEdge(int vid1, Point_2 p1, int vid2, Point_2 p2) {
 // Copied from (and modified slightly, for Eigen::Matrix and extra functionality) 
 // https://github.com/vsmolyakov/cpp/blob/master/graphs/apsp_floyd_warshall.cpp
 // Vector2d SkeletalGraph::getCentroid(bool immediate=false) {
-Vector2d SkeletalGraph::getCentroid(bool immediate) {
+Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
+									bool immediate) {
 	for (int k = 0; k < count; k++) {
 		for (int i = 0; i < count; i++) {
 			for (int j = 0; j < count; j++) {
@@ -67,7 +68,7 @@ Vector2d SkeletalGraph::getCentroid(bool immediate) {
 		return vertex_map[min_idx].point;
 	}
 
-	std::vector<std::pair<double, size_t> > outStats(count);
+	// std::vector<std::pair<double, size_t> > outStats(count);
 	for (size_t i = 0; i < count; i++) {
 		outStats[i] = std::make_pair(dists(i), i);
 	}

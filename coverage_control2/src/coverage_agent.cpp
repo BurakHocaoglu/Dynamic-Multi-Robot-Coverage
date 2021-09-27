@@ -65,6 +65,9 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 
 	inflated_outer_boundary = *(pieces[0]);
 
+	if (inflated_outer_boundary.is_clockwise_oriented()) 
+		inflated_outer_boundary.reverse_orientation();
+
 	int rbnd_v_count = region_boundary.size();
 	for (int i = 0; i < rbnd_v_count; i++) {
 		int j = (i + 1) % rbnd_v_count;
@@ -113,6 +116,11 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 		}
 
 		inflated_region_holes.push_back(*(hole_pieces[0]));
+	}
+
+	for (int i = 0; i < h_count; i++) {
+		if (!inflated_region_holes[i].is_clockwise_oriented()) 
+			inflated_region_holes[i].reverse_orientation();
 	}
 
 	// actual_region = Polygon_with_holes_2(region_boundary, 
@@ -337,7 +345,6 @@ void Agent::step() {
 	}
 
 	total_force += m_params.K_goal * (goal - position);
-	// total_force += m_params.K_goal * (target - position);
 
 	double mag = total_force.norm();
 	double ang_diff = wrapToPi(atan2(total_force[1], total_force[0]) - heading);
@@ -374,8 +381,8 @@ void Agent::visibility_polygon() {
 	// CGAL::Arr_naive_point_location<Arrangement_2> pl(environment_arr);
 	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
 
-	// TEV tev(local_env_context);
-	TEV tev(environment_arr);
+	TEV tev(local_env_context);
+	// TEV tev(environment_arr);
 
 	Face_handle fh;
 
@@ -520,7 +527,6 @@ void Agent::build_local_skeleton() {
 		ROS_WARN("%s - Work region is not CCW oriented!", name.c_str());
 		// current_work_region.outer_boundary().reverse_orientation();
 		goal = position;
-		// target = position;
 		return;
 	}
 
@@ -528,7 +534,6 @@ void Agent::build_local_skeleton() {
 	if (current_skeleton->size_of_vertices() < 3) {
 		ROS_WARN("%s - Too low skeletal node count!!", name.c_str());
 		goal = position;
-		// target = position;
 		return;
 	}
 
@@ -563,8 +568,22 @@ void Agent::build_local_skeleton() {
 	// 	goal = skeletal_map.getCentroid();
 	// }
 
-	goal = skeletal_map.getCentroid();
-	// target = goal;
+	// goal = skeletal_map.getCentroid();
+
+	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
+	target = skeletal_map.getCentroid(stats);
+
+	for (size_t j = 0; j < skeletal_map.getCount(); j++) {
+		goal = skeletal_map.getVertexById(stats[j].second);
+
+		Point_2 cgal_goal_candidate(goal(0), goal(1));
+		auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
+		if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+			continue;
+
+		else 
+			break;
+	}
 }
 
 void Agent::compute_geometric_centroid() {
@@ -591,7 +610,6 @@ void Agent::compute_geometric_centroid() {
 	cy /= 6.0 * area;
 
 	goal = Vector2d(cx, cy);
-	// target = Vector2d(cx, cy);
 }
 
 void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 

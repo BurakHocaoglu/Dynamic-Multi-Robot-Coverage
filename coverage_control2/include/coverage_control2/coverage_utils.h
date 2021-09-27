@@ -170,7 +170,8 @@ class SkeletalGraph {
 		int getVertexId(int vid, Point_2 p);
 		void addEdge(int vid1, Point_2 p1, int vid2, Point_2 p2);
 
-		Vector2d getCentroid(bool immediate=false);
+		Vector2d getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
+							 bool immediate=false);
 
 		uint32_t getCount();
 		Vector2d getVertexById(int id);

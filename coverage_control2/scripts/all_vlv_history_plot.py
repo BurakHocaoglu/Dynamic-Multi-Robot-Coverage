@@ -26,13 +26,24 @@ history_index = -1
 history_thread = None
 obstacle_patches = dict()
 
-def get_skeleton(poly):
+def get_skeleton(poly, holes=[]):
 	sgp = sg.Polygon(poly)
 
 	if sgp.orientation() == sg.Sign.CLOCKWISE:
 		sgp.reverse_orientation()
 
-	return sg.skeleton.create_interior_straight_skeleton(sgp)
+	hole_list = []
+	for h in holes:
+		sgh = sg.Polygon(h)
+
+		if sgh.orientation() != sg.Sign.CLOCKWISE:
+			sgh.reverse_orientation()
+
+		hole_list.append(sgh)
+
+	full_poly = sg.PolygonWithHoles(sgp, hole_list)
+
+	return sg.skeleton.create_interior_straight_skeleton(full_poly)
 
 def animate_history(i, ax, lims, hist):
 	try:
@@ -53,16 +64,24 @@ def animate_history(i, ax, lims, hist):
 				i = min(len(hist_piece["position"]) - 1, globals()["history_index"])
 				pos = hist_piece["position"][i]
 				poly = hist_piece["polygon"][i]
+				holes = hist_piece["holes"][i]
 				robot_color = globals()["__COLORS"][int(aid)]
 				ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
-				ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3))
+				ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3, zorder=2))
 
-				skeleton = get_skeleton(poly)
+				for h in holes:
+					ax.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=0.8, zorder=1))
+
+				skeleton = get_skeleton(poly, holes)
 				for h in skeleton.halfedges:
 					if h.is_bisector:
 						p1 = h.vertex.point
 						p2 = h.opposite.vertex.point
 						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+
+				for v in skeleton.vertices:
+					plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
+														   v.time, color='blue', fill=False))
 
 	except Exception as e:
 		# raise e

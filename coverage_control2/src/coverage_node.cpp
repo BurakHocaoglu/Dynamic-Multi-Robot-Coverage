@@ -27,7 +27,10 @@ int main(int argc, char **argv) {
 	if (node.getParam("/coverage_boundary", coverage_boundary)) {
 		// ROS_ASSERT(coverage_boundary.getType() == XmlRpc::XmlRpcValue::TypeArray);
 
-		create_poly_from_raw(coverage_boundary, exp_region);
+		create_poly_from_raw(coverage_boundary, exp_region, true);
+
+		if (exp_region.is_clockwise_oriented()) 
+			exp_region.reverse_orientation();
 
 		ROS_INFO("Retrieved coverage boundary.");
 	} else {
@@ -43,6 +46,10 @@ int main(int argc, char **argv) {
 		for (; itr != coverage_obstacles.end(); itr++) {
 			Polygon_2 obs_i;
 			create_poly_from_raw(itr->second, obs_i);
+
+			if (obs_i.is_counterclockwise_oriented()) 
+				obs_i.reverse_orientation();
+
 			exp_obstacles.push_back(obs_i);
 		}
 

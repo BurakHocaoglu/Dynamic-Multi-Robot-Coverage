@@ -78,7 +78,7 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 		Vector2d middle(CGAL::to_double(region_boundary[i][0] + region_boundary[j][0]), 
 						CGAL::to_double(region_boundary[i][1] + region_boundary[j][1]));
 
-		BoundarySegment seg = {normal, middle * 0.5};
+		BoundarySegment seg = {0, normal, middle * 0.5};
 		segments_to_avoid.push_back(seg);
 		vis_segments.emplace_back(region_boundary[i], region_boundary[j]);
 	}
@@ -176,21 +176,27 @@ void Agent::broadcast() {
 	current_state.velocity.x = velocity(0);
 	current_state.velocity.y = velocity(1);
 	current_state.velocity.z = 0.;
-
-	K::FT the_workload;
-	CGAL::area_2(current_work_region.outer_boundary().vertices_begin(), 
-				 current_work_region.outer_boundary().vertices_end(), 
-				 the_workload, K());
-
-	current_workload = CGAL::to_double(the_workload);
-
-	// ROS_INFO("%s - current workload: %.3f", name.c_str(), current_workload);
-	// if (current_work_region.number_of_holes() > 0) 
-	// 	std::cout << name << " - holes!\n";
-
+	current_state.largest_workload_piece = largest_workload;
 	current_state.workload = current_workload;
 
 	state_pub.publish(current_state);
+}
+
+double Agent::calculate_workload() {
+	double negative_workload = 0.;
+	K::FT outer_area, hole_area;
+
+	CGAL::area_2(current_work_region.outer_boundary().vertices_begin(), 
+				 current_work_region.outer_boundary().vertices_end(), 
+				 outer_area, K());
+
+	HoleIterator cwrh_itr = current_work_region.holes_begin();
+	for (; cwrh_itr != current_work_region.holes_end(); cwrh_itr++) {
+		CGAL::area_2(cwrh_itr->vertices_begin(), cwrh_itr->vertices_end(), hole_area, K());
+		negative_workload += CGAL::to_double(hole_area);
+	}
+
+	return CGAL::to_double(outer_area) - negative_workload;
 }
 
 double Agent::local_utility(const Vector2d& p) {
@@ -239,7 +245,6 @@ void Agent::step() {
 		// 	continue;
 		// }
 
-		// ROS_INFO("%s - processing ID %u ...", name.c_str(), itr->first);
 		Vector2d r_ij = itr->second.position - position;
 		Vector2d m_ij = (position + itr->second.position) * 0.5;
 		double norm = r_ij.norm();
@@ -249,7 +254,7 @@ void Agent::step() {
 				// total_force += m_params.K_repulsion * -r_ij * m_params.repulsion_const / pow(norm - 2. * m_params.safe_radius, 2);
 				// total_force += m_params.K_attraction * r_ij * m_params.attraction_const / norm;
 
-				BoundarySegment n_seg = {r_ij, m_ij};
+				BoundarySegment n_seg = {itr->first, r_ij, m_ij};
 				neighbour_segments.push_back(n_seg);
 
 				constraints.push_back(r_ij);
@@ -276,7 +281,7 @@ void Agent::step() {
 								m_params.repulsion_const / norm;
 			}
 
-			BoundarySegment n_seg = {r_ij, m_ij};
+			BoundarySegment n_seg = {itr->first, r_ij, m_ij};
 			neighbour_segments.push_back(n_seg);
 
 			constraints.push_back(r_ij);
@@ -296,9 +301,15 @@ void Agent::step() {
 		}
 	}
 
-	get_voronoi_cell_raw(neighbour_segments, agents_to_consider, A, b);
+	// std::vector<Line_2> relevantBisectors;
+	std::vector<std::pair<uint8_t, Line_2> > relevantBisectors;
+	// std::vector<Vector2d> theFrontier;
+	std::vector<UtilityPair> theFrontier;
 
-	visibility_limited_voronoi();
+	get_voronoi_cell_raw(neighbour_segments, agents_to_consider, A, b, relevantBisectors);
+
+	// visibility_limited_voronoi();
+	visibility_limited_voronoi(relevantBisectors, theFrontier);
 
 	if (b_settings.centroid_alg == CentroidAlgorithm::UNKNOWN) {
 		b_settings.stationary = true;
@@ -307,38 +318,16 @@ void Agent::step() {
 		if (b_settings.centroid_alg == CentroidAlgorithm::GEOMETRIC) {
 			compute_geometric_centroid();
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::GEODESIC_APPROXIMATE) {
-			build_local_skeleton();
+			build_local_skeleton(theFrontier);
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::GEODESIC_EXACT) {
 			ROS_WARN("%s - does not have a valid exact geodesic centroid algorithm!", name.c_str());
+		} else if (b_settings.centroid_alg == CentroidAlgorithm::FRONTIER_FOCUSED) {
+			build_local_skeleton(theFrontier, true);
 		}
 	}
 
 	if (b_settings.stationary) 
 		return;
-
-	// std::vector<UtilityPair> local_valid_frontier;
-
-	// for (int j = 0; j < n_offsets; j++) {
-	// 	double ang_step = wrapToPi(heading + angle_offsets[j]);
-	// 	Vector2d d(cos(ang_step), sin(ang_step));
-	// 	Vector2d cand_vertex = position + s_params.sense_radius * d;
-
-	// 	if (!is_point_valid(cand_vertex)) 
-	// 		continue;
-
-	// 	if (agents_to_consider > 0) {
-	// 		VectorXd feasibility(agents_to_consider);
-	// 		feasibility = A * cand_vertex - b;
-
-	// 		if ((feasibility.array() < 0.1).all()) {
-	// 			local_valid_frontier.emplace_back(local_utility(cand_vertex), cand_vertex);
-	// 		}
-	// 	} else {
-	// 		local_valid_frontier.emplace_back(local_utility(cand_vertex), cand_vertex);
-	// 	}
-	// }
-
-	// select_goal_from_local_frontier(local_valid_frontier);
 
 	if (!is_point_valid(goal)) {
 		ROS_WARN("%s - would move towards an invalid goal!", name.c_str());
@@ -363,7 +352,6 @@ void Agent::step() {
 	// heading = wrapToPi(heading + w * m_params.delta_t);
 	// heading = atan2(velocity(1), velocity(0));
 
-	// if (ang_diff <= m_params.wmax)
 	if (std::fabs(ang_diff) <= m_params.wmax)
 		position += velocity * 0.1;
 
@@ -429,7 +417,10 @@ void Agent::visibility_polygon() {
 	current_visibility_poly = new_visibility_poly;
 }
 
-void Agent::visibility_limited_voronoi() {
+void Agent::visibility_limited_voronoi(std::vector<std::pair<uint8_t, Line_2> >& bisectors, 
+									   std::vector<UtilityPair>& outFrontier) {
+									   // std::vector<Vector2d>& outFrontier) {
+
 	std::list<Polygon_with_holes_2> intersection_pieces;
 
 	// CGAL::intersection(current_visibility_poly, 
@@ -483,10 +474,8 @@ void Agent::visibility_limited_voronoi() {
 
 		if (!located) {
 			intr_piece = intersection_pieces.front();
-			// ROS_WARN("%s - could not be located in one of the intersections!");
+			ROS_WARN("%s - could not be located in one of the intersections!", name.c_str());
 		}
-
-		// intr_piece = intersection_pieces.front();
 
 		coverage_control2::HistoryStep hist_step;
 		hist_step.id = id;
@@ -499,6 +488,10 @@ void Agent::visibility_limited_voronoi() {
 			vlvp_point.x = CGAL::to_double(v_itr->x());
 			vlvp_point.y = CGAL::to_double(v_itr->y());
 			hist_step.cell.outer_boundary.points.push_back(vlvp_point);
+
+			outFrontier.push_back(std::make_pair(workload_utility(*v_itr, bisectors), 
+												 Vector2d(CGAL::to_double(v_itr->x()), 
+														  CGAL::to_double(v_itr->y()))));
 		}
 
 		HoleIterator h_itr = intr_piece.holes_begin();
@@ -522,7 +515,8 @@ void Agent::visibility_limited_voronoi() {
 	}
 }
 
-void Agent::build_local_skeleton() {
+// void Agent::build_local_skeleton(std::vector<Vector2d>& inFrontier, bool frontierFocus) {
+void Agent::build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool frontierFocus) {
 	if (current_work_region.outer_boundary().is_clockwise_oriented()) {
 		ROS_WARN("%s - Work region is not CCW oriented!", name.c_str());
 		// current_work_region.outer_boundary().reverse_orientation();
@@ -555,34 +549,46 @@ void Agent::build_local_skeleton() {
 		Point_2 p1 = htr->vertex()->point();
 		Point_2 p2 = htr->opposite()->vertex()->point();
 
-		skeletal_map.addEdge(vid1, htr->vertex()->point(), 
-							 vid2, htr->opposite()->vertex()->point());
+		double weight1 = CGAL::to_double(htr->vertex()->time());
+		double weight2 = CGAL::to_double(htr->opposite()->vertex()->time());
+
+		skeletal_map.addEdge(vid1, htr->vertex()->point(), weight1, 
+							 vid2, htr->opposite()->vertex()->point(), weight2);
 
 		seen_edges[htr->id()] = true;
 		seen_edges[htr->opposite()->id()] = true;
 	}
 
-	// if (current_work_region.outer_boundary().size() == 3) {
-	// 	compute_geometric_centroid();
-	// } else {
-	// 	goal = skeletal_map.getCentroid();
-	// }
+	if (frontierFocus) {
+		std::vector<UtilityPair>::iterator elem_itr = std::min_element(inFrontier.begin(), inFrontier.end(), 
+																	[&](UtilityPair p1, UtilityPair p2){
+																		return p1.first < p2.first;
+																	});
 
-	// goal = skeletal_map.getCentroid();
+		current_workload = calculate_workload();
+		largest_workload = 0.; // Not correct, but irrelevant at this branch.
 
-	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
-	target = skeletal_map.getCentroid(stats);
+		target = elem_itr->second;
+		goal = skeletal_map.spreadSearchFromVertex(target, current_visibility_poly);
+	} else {
+		std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
+		target = skeletal_map.getCentroid(stats);
+		// target = skeletal_map.getLargestNode(stats);
 
-	for (size_t j = 0; j < skeletal_map.getCount(); j++) {
-		goal = skeletal_map.getVertexById(stats[j].second);
+		current_workload = calculate_workload();
+		largest_workload = stats[0].first;
 
-		Point_2 cgal_goal_candidate(goal(0), goal(1));
-		auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
-		if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-			continue;
+		for (size_t j = 0; j < skeletal_map.getCount(); j++) {
+			goal = skeletal_map.getVertexById(stats[j].second);
 
-		else 
-			break;
+			Point_2 cgal_goal_candidate(goal(0), goal(1));
+			auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
+			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+				continue;
+
+			else 
+				break;
+		}
 	}
 }
 
@@ -612,10 +618,24 @@ void Agent::compute_geometric_centroid() {
 	goal = Vector2d(cx, cy);
 }
 
+double Agent::workload_utility(Point_2& p, std::vector<std::pair<uint8_t, Line_2> >& bisectors) {
+	double utility = 0.;
+	std::vector<std::pair<uint8_t, Line_2> >::iterator b_itr = bisectors.begin();
+	for (; b_itr != bisectors.end(); b_itr++) {
+		if (b_itr->second.has_on(p)) {
+			utility += neighbours[b_itr->first].workload - current_workload;
+		}
+	}
+
+	return utility;
+}
+
 void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 
 								 uint8_t neighbour_count, 
 								 ConstraintMatrix2d& A, 
-								 VectorXd& b) {
+								 VectorXd& b, 
+								 std::vector<std::pair<uint8_t, Line_2> >& outRelevantBisectors) {
+	std::unordered_map<int, bool> relevantSegmentIndices;
 	std::vector<Point_2> cvx_voronoi_vertices;
 	int n_segments = segments.size();
 
@@ -649,13 +669,28 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 
 				if ((feasibility.array() < 1.).all()) {
 					cvx_voronoi_vertices.emplace_back(p_intr(0), p_intr(1));
+					relevantSegmentIndices[i] = true;
+					relevantSegmentIndices[j] = true;
 				}
 			}
 		}
 	}
 
+	for (std::pair<int, bool> entry : relevantSegmentIndices) {
+		if (!entry.second) {
+			ROS_WARN("%s - How did it get false!?", name.c_str());
+			continue;
+		}
+
+		uint8_t nid = segments[entry.first].mirror_id;
+		Vector2d n = segments[entry.first].normal;
+		Vector2d p = segments[entry.first].middle;
+		// outRelevantBisectors.push_back(Line_2(Point_2(p(0), p(1)), Vector_2(n(0), n(1))));
+		outRelevantBisectors.push_back(std::make_pair(nid, Line_2(Point_2(p(0), p(1)), 
+																  Vector_2(n(0), n(1)))));
+	}
+
 	// Voronoi bisectors vs. Boundary segments
-	// ROS_INFO("%s - Intersecting Voronoi vs. Outer Boundary", name.c_str());
 	size_t n_seg_avoid = segments_to_avoid.size();
 	for (int i = 0; i < n_segments; i++) {
 		double d_i = segments[i].self_product();

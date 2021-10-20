@@ -21,6 +21,7 @@ class Agent {
 		bool is_point_valid(const Vector2d& p);
 
 		void broadcast();
+		double calculate_workload();
 		double local_utility(const Vector2d& p);
 		void select_goal_from_local_frontier(std::vector<UtilityPair>& frontier);
 
@@ -28,14 +29,19 @@ class Agent {
 
 	private:
 		void visibility_polygon();
-		void visibility_limited_voronoi();
-		void build_local_skeleton();
+		void visibility_limited_voronoi(std::vector<std::pair<uint8_t, Line_2> >& bisectors, 
+										std::vector<UtilityPair>& outFrontier);
+										// std::vector<Vector2d>& outFrontier);
+		// void build_local_skeleton(std::vector<Vector2d>& inFrontier, bool frontierFocus=false);
+		void build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool frontierFocus=false);
 		void compute_geometric_centroid();
+		double workload_utility(Point_2& p, std::vector<std::pair<uint8_t, Line_2> >& bisectors);
 
 		void get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 
 								  uint8_t neighbour_count, 
 								  ConstraintMatrix2d& A, 
-								  VectorXd& b);
+								  VectorXd& b, 
+								  std::vector<std::pair<uint8_t, Line_2> >& outRelevantBisectors);
 
 		void state_cb(const AgentStateMsg::ConstPtr& msg);
 
@@ -64,6 +70,7 @@ class Agent {
 		Vector2d target;
 		double heading;
 		double current_workload;
+		double largest_workload;
 
 		std::vector<double> angle_offsets;
 		size_t n_offsets;
@@ -75,7 +82,6 @@ class Agent {
 
 		Polygon_2 region_boundary;
 		Polygon_2 inflated_outer_boundary;
-		// Polygon_with_holes_2 inflated_outer_boundary;
 
 		Polygon_2_Array region_holes;
 		Polygon_2_Array inflated_region_holes;

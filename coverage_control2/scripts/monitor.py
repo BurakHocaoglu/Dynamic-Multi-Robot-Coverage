@@ -87,7 +87,9 @@ def state_cb(msg):
 	globals()["all_states"][msg.id] = {"pos": np.array([msg.position.x, msg.position.y], dtype=float), 
 									   "vel": np.array([msg.velocity.x, msg.velocity.y], dtype=float), 
 									   "goal": np.array([msg.goal.x, msg.goal.y], dtype=float), 
-									   "hdg": msg.heading}
+									   "hdg": msg.heading, 
+									   "dom": msg.largest_workload_piece, 
+									   "load": msg.workload}
 
 	if globals()["motion_history"].get(msg.id) is None:
 		globals()["motion_history"][msg.id] = deque(maxlen=100)
@@ -152,10 +154,14 @@ def handle_vis_level(req):
 
 def handle_print_mass(req):
 	try:
-		message = ""
+		# message = ""
+		message = []
 
 		for vid, vlv in globals()["all_vl_voronoi"].items():
-			message += "({}, {}) - ".format(vid, get_area(vlv.get_xy()))
+			# message += "({}, {}) - ".format(vid, get_area(vlv.get_xy()))
+			# message += "({}, {}) - ".format(vid, globals()["all_states"][vid]["load"])
+			message.append("({}, {}, {})".format(vid, globals()["all_states"][vid]["load"], 
+													  globals()["all_states"][vid]["dom"]))
 
 		return True, message
 	except Exception as e:

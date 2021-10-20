@@ -46,9 +46,6 @@
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 #include <CGAL/create_offset_polygons_from_polygon_with_holes_2.h>
 
-// #include <CGAL/Gps_traits_2.h>
-// #include <CGAL/offset_polygon_2.h>
-
 // #include "coverage_control2/geodesic_center.hpp"
 
 #include "dump_to_eps.h"
@@ -99,8 +96,14 @@ enum CentroidAlgorithm {
 	UNKNOWN=0,
 	GEOMETRIC=1,
 	GEODESIC_APPROXIMATE=2,
-	GEODESIC_EXACT=3
+	GEODESIC_EXACT=3,
+	FRONTIER_FOCUSED=4
 };
+
+// enum SkeletalEdgeGenericType {
+// 	LINE_SEGMENT=0,
+// 	PARABOLIC_SEGMENT=1
+// };
 
 struct MotionParameters {
 	double delta_t;
@@ -142,6 +145,7 @@ struct BehaviourSettings {
 };
 
 struct BoundarySegment {
+	uint8_t mirror_id;
 	Vector2d normal;
 	Vector2d middle;
 
@@ -157,39 +161,92 @@ struct DebugLogConfig {
 struct SkeletalNode {
 	int id;
 	Vector2d point;
+	double weight;
 };
 
-// struct SkeletalEdge {
-// 	double weight;
-// };
+struct SkeletalEdgeGeneric {
+	// SkeletalEdgeGenericType type;
+	int id;
+	int source_vid;
+	int target_vid;
+	double cost;
+};
+
+struct SkeletalNodeGeneric {
+	int id;
+	double w;
+	Vector2d point;
+	std::vector<int> edge_ids;
+};
 
 class SkeletalGraph {
 	public:
 		SkeletalGraph(uint32_t c);
 
-		int getVertexId(int vid, Point_2 p);
-		void addEdge(int vid1, Point_2 p1, int vid2, Point_2 p2);
+		int getVertexId(int vid, Point_2 p, double w);
+		void addEdge(int vid1, Point_2 p1, double w1,
+					 int vid2, Point_2 p2, double w2);
 
+		double getTotalWork();
+		Vector2d getLargestNode(std::vector<std::pair<double, size_t> >& outStats);
 		Vector2d getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
 							 bool immediate=false);
 
 		uint32_t getCount();
 		Vector2d getVertexById(int id);
 		std::vector<Point_2> getVerticesAsCgalPoints();
+		// void spreadFromVertex(Vector2d v, std::vector<std::pair<double, size_t> >& outStats);
+		Vector2d spreadSearchFromVertex(Vector2d v, Polygon_2& vispoly);
 
 	private:
 		MatrixXd graph;
 		uint32_t count;
+		double total_work;
 		int next_id_available;
 		std::unordered_map<int, int> id_map;
 		std::unordered_map<int, SkeletalNode> vertex_map;
 };
 
-inline void create_poly_from_raw(XmlRpc::XmlRpcValue& data, Polygon_2& out_poly) {
+// class SkeletalGraphGeneric {
+// 	public:
+// 		SkeletalGraphGeneric(uint32_t c);
+
+// 		int getVertexId(int vid, Point_2 p, double w);
+// 		int insertVertex(Vector2d p);
+
+// 		void addEdge(int vid1, Point_2 p1, double w1, 
+// 					 int vid2, Point_2 p2, double w2);
+
+// 		double getTotalWork();
+// 		Vector2d getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
+// 							 bool immediate=false);
+
+// 		std::vector<Vector2d> getShortestPath();
+
+// 		uint32_t getCount();
+// 		Vector2d getVertexById(int id);
+// 		std::vector<Point_2> getVerticesAsCgalPoints();
+
+// 	private:
+// 		MatrixXd graph;
+// 		uint32_t count;
+// 		int next_vid_available;
+// 		int next_eid_available;
+// 		double total_work;
+// 		std::unordered_map<int, int> id_map;
+// 		std::unordered_map<int, SkeletalEdgeGeneric> edge_map;
+// 		std::unordered_map<int, SkeletalNodeGeneric> vertex_map;
+// };
+
+inline void create_poly_from_raw(XmlRpc::XmlRpcValue& data, Polygon_2& out_poly, 
+								 bool is_outer_boundary=false) {
 	size_t v_count = data.size();
 	for (size_t i = 0; i < v_count; i++) {
 		out_poly.push_back(Point_2((double)(data[i][0]), (double)(data[i][1])));
 	}
+
+	if (is_outer_boundary && out_poly.is_clockwise_oriented()) 
+		out_poly.reverse_orientation();
 }
 
 inline void angular_sort(std::vector<Point_2>& V, Point_2& ref) {
@@ -253,6 +310,9 @@ inline CentroidAlgorithm getAlgFromString(const std::string& s) {
 
 	else if (s.compare("geodesic_exact") == 0) 
 		return CentroidAlgorithm::GEODESIC_EXACT;
+
+	else if (s.compare("frontier_focused") == 0) 
+		return CentroidAlgorithm::FRONTIER_FOCUSED;
 
 	else 
 		return CentroidAlgorithm::UNKNOWN;

@@ -16,6 +16,7 @@
 #include <coverage_control2/PolygonWithHoles.h>
 #include <coverage_control2/AgentState.h>
 #include <coverage_control2/SetInitialPose.h>
+#include <coverage_control2/UtilityDebug.h>
 
 #include <iostream>
 #include <cstdio>

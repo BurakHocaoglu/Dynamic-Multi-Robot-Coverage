@@ -28,6 +28,7 @@ add_message_files(
    Polygon.msg
    HistoryStep.msg
    PolygonWithHoles.msg
+   UtilityDebug.msg
 )
 
 add_service_files(

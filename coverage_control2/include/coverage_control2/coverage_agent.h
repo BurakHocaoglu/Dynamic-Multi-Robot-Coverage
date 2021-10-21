@@ -29,19 +29,18 @@ class Agent {
 
 	private:
 		void visibility_polygon();
-		void visibility_limited_voronoi(std::vector<std::pair<uint8_t, Line_2> >& bisectors, 
+		void visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors, 
 										std::vector<UtilityPair>& outFrontier);
-										// std::vector<Vector2d>& outFrontier);
-		// void build_local_skeleton(std::vector<Vector2d>& inFrontier, bool frontierFocus=false);
+
 		void build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool frontierFocus=false);
 		void compute_geometric_centroid();
-		double workload_utility(Point_2& p, std::vector<std::pair<uint8_t, Line_2> >& bisectors);
+		double workload_utility(Point_2& p, std::vector<BoundarySegment>& bisectors);
 
 		void get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 
 								  uint8_t neighbour_count, 
 								  ConstraintMatrix2d& A, 
 								  VectorXd& b, 
-								  std::vector<std::pair<uint8_t, Line_2> >& outRelevantBisectors);
+								  std::vector<BoundarySegment>& outRelevantBisectors);
 
 		void state_cb(const AgentStateMsg::ConstPtr& msg);
 
@@ -54,6 +53,7 @@ class Agent {
 		ros::Publisher cvx_vor_pub;
 		ros::Publisher vl_voronoi_pub;
 		ros::Publisher state_pub;
+		ros::Publisher utility_debug_pub;
 		ros::Subscriber state_sub;
 		ros::ServiceServer initPose_service;
 		ros::ServiceServer ready_service;

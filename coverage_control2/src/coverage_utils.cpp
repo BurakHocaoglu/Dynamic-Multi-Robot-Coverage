@@ -35,8 +35,8 @@ void SkeletalGraph::addEdge(int vid1, Point_2 p1, double w1,
 	double D = sqrt(pow(CGAL::to_double(p1.x() - p2.x()), 2) + 
 					pow(CGAL::to_double(p1.y() - p2.y()), 2));
 
-	graph(id1, id2) = D;
-	graph(id2, id1) = D;
+	graph(id1, id2) = D + w1 - w2;
+	graph(id2, id1) = D + w2 - w1;
 	total_work += D;
 }
 

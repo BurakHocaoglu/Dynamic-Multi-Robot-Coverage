@@ -317,11 +317,13 @@ void Agent::step() {
 		if (b_settings.centroid_alg == CentroidAlgorithm::GEOMETRIC) {
 			compute_geometric_centroid();
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::GEODESIC_APPROXIMATE) {
-			build_local_skeleton(theFrontier);
+			// build_local_skeleton(theFrontier);
+			build_local_skeleton(relevantBisectors);
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::GEODESIC_EXACT) {
 			ROS_WARN("%s - does not have a valid exact geodesic centroid algorithm!", name.c_str());
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::FRONTIER_FOCUSED) {
-			build_local_skeleton(theFrontier, true);
+			// build_local_skeleton(theFrontier, true);
+			build_local_skeleton(relevantBisectors, true);
 		}
 	}
 
@@ -480,8 +482,8 @@ void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors,
 		hist_step.position.x = position(0);
 		hist_step.position.y = position(1);
 
-		coverage_control2::UtilityDebug utilities;
-		utilities.id = id;
+		// coverage_control2::UtilityDebug utilities;
+		// utilities.id = id;
 
 		VertexIterator v_itr = intr_piece.outer_boundary().vertices_begin();
 		for (; v_itr != intr_piece.outer_boundary().vertices_end(); v_itr++) {
@@ -490,14 +492,14 @@ void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors,
 			vlvp_point.y = CGAL::to_double(v_itr->y());
 			hist_step.cell.outer_boundary.points.push_back(vlvp_point);
 
-			double u_i = workload_utility(*v_itr, bisectors);
-			outFrontier.push_back(std::make_pair(u_i, 
-												 Vector2d(CGAL::to_double(v_itr->x()), 
-														  CGAL::to_double(v_itr->y()))));
-			utilities.data.push_back(u_i);
+			// double u_i = workload_utility(*v_itr, bisectors);
+			// outFrontier.push_back(std::make_pair(u_i, 
+			// 									 Vector2d(CGAL::to_double(v_itr->x()), 
+			// 											  CGAL::to_double(v_itr->y()))));
+			// utilities.data.push_back(u_i);
 		}
 
-		utility_debug_pub.publish(utilities);
+		// utility_debug_pub.publish(utilities);
 
 		HoleIterator h_itr = intr_piece.holes_begin();
 		for (; h_itr != intr_piece.holes_end(); h_itr++) {
@@ -520,7 +522,8 @@ void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors,
 	}
 }
 
-void Agent::build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool frontierFocus) {
+// void Agent::build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool frontierFocus) {
+void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool frontierFocus) {
 	if (current_work_region.outer_boundary().is_clockwise_oriented()) {
 		ROS_WARN("%s - Work region is not CCW oriented!", name.c_str());
 		// current_work_region.outer_boundary().reverse_orientation();
@@ -538,6 +541,14 @@ void Agent::build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool fron
 	SkeletalGraph skeletal_map(current_skeleton->size_of_vertices());
 	std::unordered_map<int, bool> seen_edges;
 
+	double total_workload = 0.;
+	total_workload += current_workload;
+
+	std::unordered_map<uint8_t, AgentState>::iterator a_itr = neighbours.begin();
+	for (; a_itr != neighbours.end(); a_itr++) {
+		total_workload += a_itr->second.workload;
+	}
+
 	auto htr = current_skeleton->halfedges_begin();
 	for (; htr != current_skeleton->halfedges_end(); htr++) {
 		auto shtr = seen_edges.find(htr->id());
@@ -553,8 +564,11 @@ void Agent::build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool fron
 		Point_2 p1 = htr->vertex()->point();
 		Point_2 p2 = htr->opposite()->vertex()->point();
 
-		double weight1 = CGAL::to_double(htr->vertex()->time());
-		double weight2 = CGAL::to_double(htr->opposite()->vertex()->time());
+		double u1 = workload_utility(p1, inBisectors) / total_workload;
+		double u2 = workload_utility(p2, inBisectors) / total_workload;
+
+		double weight1 = u1 * CGAL::to_double(htr->vertex()->time());
+		double weight2 = u2 * CGAL::to_double(htr->opposite()->vertex()->time());
 
 		skeletal_map.addEdge(vid1, htr->vertex()->point(), weight1, 
 							 vid2, htr->opposite()->vertex()->point(), weight2);
@@ -563,61 +577,80 @@ void Agent::build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool fron
 		seen_edges[htr->opposite()->id()] = true;
 	}
 
-	if (frontierFocus) {
-		// std::vector<UtilityPair>::iterator elem_itr = std::max_element(inFrontier.begin(), inFrontier.end(), 
-		// 															[&](UtilityPair p1, UtilityPair p2){
-		// 																return p1.first < p2.first;
-		// 															});
+	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
+	target = skeletal_map.getCentroid(stats);
+	// target = skeletal_map.getLargestNode(stats);
 
-		std::sort(inFrontier.begin(), inFrontier.end(), [&](UtilityPair p1, UtilityPair p2){
-															return p1.first < p2.first;
-														});
+	current_workload = calculate_workload();
+	largest_workload = stats[0].first;
 
-		current_workload = calculate_workload();
-		// largest_workload = elem_itr->first;
-		largest_workload = inFrontier[0].first;
+	for (size_t j = 0; j < skeletal_map.getCount(); j++) {
+		goal = skeletal_map.getVertexById(stats[j].second);
 
-		if (largest_workload == 0) {
-			std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
-			target = skeletal_map.getCentroid(stats);
-			largest_workload = stats[0].first;
+		Point_2 cgal_goal_candidate(goal(0), goal(1));
+		auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
+		if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+			continue;
 
-			for (size_t j = 0; j < skeletal_map.getCount(); j++) {
-				goal = skeletal_map.getVertexById(stats[j].second);
-
-				Point_2 cgal_goal_candidate(goal(0), goal(1));
-				auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
-				if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-					continue;
-
-				else 
-					break;
-			}
-		} else {
-			// target = elem_itr->second;
-			target = inFrontier[0].second;
-			goal = skeletal_map.spreadSearchFromVertex(target, current_visibility_poly);
-		}
-	} else {
-		std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
-		target = skeletal_map.getCentroid(stats);
-		// target = skeletal_map.getLargestNode(stats);
-
-		current_workload = calculate_workload();
-		largest_workload = stats[0].first;
-
-		for (size_t j = 0; j < skeletal_map.getCount(); j++) {
-			goal = skeletal_map.getVertexById(stats[j].second);
-
-			Point_2 cgal_goal_candidate(goal(0), goal(1));
-			auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
-			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-				continue;
-
-			else 
-				break;
-		}
+		else 
+			break;
 	}
+
+	// if (frontierFocus) {
+	// 	std::vector<UtilityPair>::iterator elem_itr = std::max_element(inFrontier.begin(), inFrontier.end(), 
+	// 																[&](UtilityPair p1, UtilityPair p2){
+	// 																	return p1.first < p2.first;
+	// 																});
+
+	// 	std::sort(inFrontier.begin(), inFrontier.end(), [&](UtilityPair p1, UtilityPair p2){
+	// 														return p1.first < p2.first;
+	// 													});
+
+	// 	current_workload = calculate_workload();
+	// 	// largest_workload = elem_itr->first;
+	// 	largest_workload = inFrontier[0].first;
+
+	// 	if (largest_workload == 0) {
+	// 		std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
+	// 		target = skeletal_map.getCentroid(stats);
+	// 		largest_workload = stats[0].first;
+
+	// 		for (size_t j = 0; j < skeletal_map.getCount(); j++) {
+	// 			goal = skeletal_map.getVertexById(stats[j].second);
+
+	// 			Point_2 cgal_goal_candidate(goal(0), goal(1));
+	// 			auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
+	// 			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+	// 				continue;
+
+	// 			else 
+	// 				break;
+	// 		}
+	// 	} else {
+	// 		// target = elem_itr->second;
+	// 		target = inFrontier[0].second;
+	// 		goal = skeletal_map.spreadSearchFromVertex(target, current_visibility_poly);
+	// 	}
+	// } else {
+	// 	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
+	// 	target = skeletal_map.getCentroid(stats);
+	// 	// target = skeletal_map.getLargestNode(stats);
+
+	// 	current_workload = calculate_workload();
+	// 	largest_workload = stats[0].first;
+
+	// 	for (size_t j = 0; j < skeletal_map.getCount(); j++) {
+	// 		goal = skeletal_map.getVertexById(stats[j].second);
+
+	// 		Point_2 cgal_goal_candidate(goal(0), goal(1));
+	// 		auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
+	// 		if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+	// 			continue;
+
+	// 		else 
+	// 			break;
+	// 	}
+	// }
 }
 
 void Agent::compute_geometric_centroid() {

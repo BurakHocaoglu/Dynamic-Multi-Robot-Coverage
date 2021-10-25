@@ -344,10 +344,13 @@ void Agent::step() {
 	if (fabs(w) > m_params.wmax) 
 		w = copysign(m_params.wmax, w);
 
+	// double u = mag;
+
 	clip_inplace(u, 0., m_params.umax);
 
 	Vector2d hdgVector(cos(heading), sin(heading));
 	velocity = u * hdgVector;
+	// velocity = u * total_force / mag;
 
 	// position += velocity * m_params.delta_t;
 	// heading = wrapToPi(heading + w * m_params.delta_t);
@@ -522,7 +525,6 @@ void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors,
 	}
 }
 
-// void Agent::build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool frontierFocus) {
 void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool frontierFocus) {
 	if (current_work_region.outer_boundary().is_clockwise_oriented()) {
 		ROS_WARN("%s - Work region is not CCW oriented!", name.c_str());
@@ -567,15 +569,24 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 		double u1 = workload_utility(p1, inBisectors) / total_workload;
 		double u2 = workload_utility(p2, inBisectors) / total_workload;
 
-		double weight1 = u1 * CGAL::to_double(htr->vertex()->time());
-		double weight2 = u2 * CGAL::to_double(htr->opposite()->vertex()->time());
+		bool c1 = htr->vertex()->is_contour();
+		bool c2 = htr->opposite()->vertex()->is_contour();
 
-		skeletal_map.addEdge(vid1, htr->vertex()->point(), weight1, 
-							 vid2, htr->opposite()->vertex()->point(), weight2);
+		if (c1 && c2) {
+			ROS_WARN("%s - Contour halfedge detected. This should not be executed!", name.c_str());
+		} 
+
+		skeletal_map.addEdge(vid1, htr->vertex()->point(), u1, c1, 
+							 vid2, htr->opposite()->vertex()->point(), u2, c2);
 
 		seen_edges[htr->id()] = true;
 		seen_edges[htr->opposite()->id()] = true;
 	}
+
+	// if (id == 1)
+	// 	std::cout << "------\n";
+
+	skeletal_map.refineEdges();
 
 	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
 	target = skeletal_map.getCentroid(stats);
@@ -583,6 +594,7 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 
 	current_workload = calculate_workload();
 	largest_workload = stats[0].first;
+	// largest_workload = 0.; // Wrong, but does not matter for now...
 
 	for (size_t j = 0; j < skeletal_map.getCount(); j++) {
 		goal = skeletal_map.getVertexById(stats[j].second);
@@ -595,62 +607,6 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 		else 
 			break;
 	}
-
-	// if (frontierFocus) {
-	// 	std::vector<UtilityPair>::iterator elem_itr = std::max_element(inFrontier.begin(), inFrontier.end(), 
-	// 																[&](UtilityPair p1, UtilityPair p2){
-	// 																	return p1.first < p2.first;
-	// 																});
-
-	// 	std::sort(inFrontier.begin(), inFrontier.end(), [&](UtilityPair p1, UtilityPair p2){
-	// 														return p1.first < p2.first;
-	// 													});
-
-	// 	current_workload = calculate_workload();
-	// 	// largest_workload = elem_itr->first;
-	// 	largest_workload = inFrontier[0].first;
-
-	// 	if (largest_workload == 0) {
-	// 		std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
-	// 		target = skeletal_map.getCentroid(stats);
-	// 		largest_workload = stats[0].first;
-
-	// 		for (size_t j = 0; j < skeletal_map.getCount(); j++) {
-	// 			goal = skeletal_map.getVertexById(stats[j].second);
-
-	// 			Point_2 cgal_goal_candidate(goal(0), goal(1));
-	// 			auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
-	// 			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-	// 				continue;
-
-	// 			else 
-	// 				break;
-	// 		}
-	// 	} else {
-	// 		// target = elem_itr->second;
-	// 		target = inFrontier[0].second;
-	// 		goal = skeletal_map.spreadSearchFromVertex(target, current_visibility_poly);
-	// 	}
-	// } else {
-	// 	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
-	// 	target = skeletal_map.getCentroid(stats);
-	// 	// target = skeletal_map.getLargestNode(stats);
-
-	// 	current_workload = calculate_workload();
-	// 	largest_workload = stats[0].first;
-
-	// 	for (size_t j = 0; j < skeletal_map.getCount(); j++) {
-	// 		goal = skeletal_map.getVertexById(stats[j].second);
-
-	// 		Point_2 cgal_goal_candidate(goal(0), goal(1));
-	// 		auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
-	// 		if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-	// 			continue;
-
-	// 		else 
-	// 			break;
-	// 	}
-	// }
 }
 
 void Agent::compute_geometric_centroid() {
@@ -685,14 +641,24 @@ double Agent::workload_utility(Point_2& p, std::vector<BoundarySegment>& bisecto
 
 	std::vector<BoundarySegment>::iterator b_itr = bisectors.begin();
 	for (; b_itr != bisectors.end(); b_itr++) {
-		double d_u = fv.dot(b_itr->normal) / b_itr->normal.norm();
+		double d_u = (fv - b_itr->middle).dot(b_itr->normal) / b_itr->normal.norm();
 
-		if (d_u <= m_params.physical_radius) {
+		if (std::fabs(d_u) <= m_params.physical_radius) {
 			utility += neighbours[b_itr->mirror_id].workload - current_workload;
-		} else {
-			utility -= d_u;
+
+			// if (id == 1) {
+			// 	ROS_INFO("%s - (%.3f, %.3f) %.3f to %d", name.c_str(), CGAL::to_double(p.x()), 
+			// 														   CGAL::to_double(p.y()), 
+			// 														   d_u, b_itr->mirror_id);
+			// }
 		}
 	}
+
+	// if (id == 1) {
+	// 	ROS_INFO("%s - (%.3f, %.3f, %.3f)", name.c_str(), CGAL::to_double(p.x()), 
+	// 													  CGAL::to_double(p.y()), 
+	// 													  utility);
+	// }
 
 	return utility;
 }
@@ -749,11 +715,6 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 			continue;
 		}
 
-		// uint8_t nid = segments[entry.first].mirror_id;
-		// Vector2d n = segments[entry.first].normal;
-		// Vector2d p = segments[entry.first].middle;
-		// outRelevantBisectors.push_back(std::make_pair(nid, Line_2(Point_2(p(0), p(1)), 
-		// 														  Vector_2(n(0), n(1)))));
 		outRelevantBisectors.push_back(segments[entry.first]);
 	}
 

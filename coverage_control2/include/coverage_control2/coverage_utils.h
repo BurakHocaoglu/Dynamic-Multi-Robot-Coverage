@@ -101,11 +101,6 @@ enum CentroidAlgorithm {
 	FRONTIER_FOCUSED=4
 };
 
-// enum SkeletalEdgeGenericType {
-// 	LINE_SEGMENT=0,
-// 	PARABOLIC_SEGMENT=1
-// };
-
 struct MotionParameters {
 	double delta_t;
 	double attraction_const;
@@ -160,35 +155,22 @@ struct DebugLogConfig {
 };
 
 struct SkeletalNode {
+	bool contour;
 	int id;
 	Vector2d point;
 	double weight;
-};
-
-struct SkeletalEdgeGeneric {
-	// SkeletalEdgeGenericType type;
-	int id;
-	int source_vid;
-	int target_vid;
-	double cost;
-};
-
-struct SkeletalNodeGeneric {
-	int id;
-	double w;
-	Vector2d point;
-	std::vector<int> edge_ids;
 };
 
 class SkeletalGraph {
 	public:
 		SkeletalGraph(uint32_t c);
 
-		int getVertexId(int vid, Point_2 p, double w);
-		void addEdge(int vid1, Point_2 p1, double w1,
-					 int vid2, Point_2 p2, double w2);
+		int getVertexId(int vid, Point_2 p, double w, bool c);
+		void addEdge(int vid1, Point_2 p1, double w1, bool c1, 
+					 int vid2, Point_2 p2, double w2, bool c2);
 
 		double getTotalWork();
+		void refineEdges();
 		Vector2d getLargestNode(std::vector<std::pair<double, size_t> >& outStats);
 		Vector2d getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
 							 bool immediate=false);
@@ -196,7 +178,6 @@ class SkeletalGraph {
 		uint32_t getCount();
 		Vector2d getVertexById(int id);
 		std::vector<Point_2> getVerticesAsCgalPoints();
-		// void spreadFromVertex(Vector2d v, std::vector<std::pair<double, size_t> >& outStats);
 		Vector2d spreadSearchFromVertex(Vector2d v, Polygon_2& vispoly);
 
 	private:
@@ -207,37 +188,6 @@ class SkeletalGraph {
 		std::unordered_map<int, int> id_map;
 		std::unordered_map<int, SkeletalNode> vertex_map;
 };
-
-// class SkeletalGraphGeneric {
-// 	public:
-// 		SkeletalGraphGeneric(uint32_t c);
-
-// 		int getVertexId(int vid, Point_2 p, double w);
-// 		int insertVertex(Vector2d p);
-
-// 		void addEdge(int vid1, Point_2 p1, double w1, 
-// 					 int vid2, Point_2 p2, double w2);
-
-// 		double getTotalWork();
-// 		Vector2d getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
-// 							 bool immediate=false);
-
-// 		std::vector<Vector2d> getShortestPath();
-
-// 		uint32_t getCount();
-// 		Vector2d getVertexById(int id);
-// 		std::vector<Point_2> getVerticesAsCgalPoints();
-
-// 	private:
-// 		MatrixXd graph;
-// 		uint32_t count;
-// 		int next_vid_available;
-// 		int next_eid_available;
-// 		double total_work;
-// 		std::unordered_map<int, int> id_map;
-// 		std::unordered_map<int, SkeletalEdgeGeneric> edge_map;
-// 		std::unordered_map<int, SkeletalNodeGeneric> vertex_map;
-// };
 
 inline void create_poly_from_raw(XmlRpc::XmlRpcValue& data, Polygon_2& out_poly, 
 								 bool is_outer_boundary=false) {

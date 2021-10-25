@@ -32,7 +32,6 @@ class Agent {
 		void visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors, 
 										std::vector<UtilityPair>& outFrontier);
 
-		// void build_local_skeleton(std::vector<UtilityPair>& inFrontier, bool frontierFocus=false);
 		void build_local_skeleton(std::vector<BoundarySegment>& bisectors, bool frontierFocus=false);
 		void compute_geometric_centroid();
 		double workload_utility(Point_2& p, std::vector<BoundarySegment>& bisectors);
@@ -97,7 +96,6 @@ class Agent {
 
 		Polygon_with_holes_2 current_work_region;
 		SsPtr current_skeleton;
-		// SkeletalBoostGraph skeletal_map;
 };
 
 #endif // DIST_COVERAGE_AGENT_H

@@ -7,7 +7,7 @@ SkeletalGraph::SkeletalGraph(uint32_t c) {
 	next_id_available = 0;
 }
 
-int SkeletalGraph::getVertexId(int vid, Point_2 p, double w) {
+int SkeletalGraph::getVertexId(int vid, Point_2 p, double w, bool c) {
 	int the_id;
 
 	std::unordered_map<int, int>::iterator itr = id_map.find(vid);
@@ -15,7 +15,7 @@ int SkeletalGraph::getVertexId(int vid, Point_2 p, double w) {
 	if (itr == id_map.end()) {
 		the_id = next_id_available;
 
-		vertex_map[the_id] = SkeletalNode{vid, Vector2d(CGAL::to_double(p.x()), 
+		vertex_map[the_id] = SkeletalNode{c, vid, Vector2d(CGAL::to_double(p.x()), 
 										 				CGAL::to_double(p.y())), w};
 
 		id_map[vid] = the_id;
@@ -27,16 +27,16 @@ int SkeletalGraph::getVertexId(int vid, Point_2 p, double w) {
 	return the_id;
 }
 
-void SkeletalGraph::addEdge(int vid1, Point_2 p1, double w1, 
-							int vid2, Point_2 p2, double w2) {
-	int id1 = getVertexId(vid1, p1, w1);
-	int id2 = getVertexId(vid2, p2, w2);
+void SkeletalGraph::addEdge(int vid1, Point_2 p1, double w1, bool c1, 
+							int vid2, Point_2 p2, double w2, bool c2) {
+	int id1 = getVertexId(vid1, p1, w1, c1);
+	int id2 = getVertexId(vid2, p2, w2, c2);
 
 	double D = sqrt(pow(CGAL::to_double(p1.x() - p2.x()), 2) + 
 					pow(CGAL::to_double(p1.y() - p2.y()), 2));
 
-	graph(id1, id2) = D + w1 - w2;
-	graph(id2, id1) = D + w2 - w1;
+	graph(id1, id2) = D;
+	graph(id2, id1) = D;
 	total_work += D;
 }
 
@@ -44,31 +44,50 @@ double SkeletalGraph::getTotalWork() {
 	return total_work;
 }
 
+void SkeletalGraph::refineEdges() {
+	for (int i = 0; i < count; i++) {
+		if (vertex_map[i].contour)
+			continue;
+
+		for (int j = i + 1; j < count; j++) {
+			if (vertex_map[j].contour) {
+				graph(i, j) *= (1. + vertex_map[j].weight);
+				graph(j, i) *= (1. + vertex_map[j].weight);
+				// vertex_map[i].weight += vertex_map[j].weight;
+			} //else {}
+		}
+	}
+}
+
 Vector2d SkeletalGraph::getLargestNode(std::vector<std::pair<double, size_t> >& outStats) {
 	std::unordered_map<int, SkeletalNode>::iterator vitr = vertex_map.begin();
-	// double max_weight = vitr->second.weight;
-	// Vector2d max_point = vitr->second.point;
-	// vitr++;
 
 	size_t i = 0;
 	for (; vitr != vertex_map.end(); vitr++) {
-		// if (vitr->second.weight > max_weight) {
-		// 	max_weight = vitr->second.weight;
-		// 	max_point = vitr->second.point;
-		// }
-
 		outStats[i] = std::make_pair(vitr->second.weight, vitr->first);
 		i++;
 	}
 
-	// return max_point;
-
 	std::sort(outStats.begin(), outStats.end(), [](std::pair<double, size_t> a, 
 												   std::pair<double, size_t> b) {
-		return a > b;
+		return a < b;
 	});
 
-	return vertex_map[outStats[0].second].point;
+	bool found = false;
+	size_t k = 0;
+	for (; k < count; k++) {
+		if (!vertex_map[outStats[k].second].contour) {
+			found = true;
+			break;
+		}
+	}
+
+	k = (found) ? k : 0;
+
+	// return vertex_map[outStats[0].second].point;
+	return vertex_map[outStats[k].second].point;
+
+	// return vertex_map[outStats[0].second].point;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -111,15 +130,29 @@ Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& out
 		return a < b;
 	});
 
-	// double pair_total = outStats[0].first + outStats[1].first;
-	double triple_total = outStats[0].first + outStats[1].first + outStats[2].first;
+	// bool found = false;
+	// size_t k = 0;
+	// for (; k < count; k++) {
+	// 	if (!vertex_map[outStats[k].second].contour) {
+	// 		found = true;
+	// 		break;
+	// 	}
+	// }
 
-	// return (outStats[0].first * vertex_map[outStats[0].second].point + 
-	// 		outStats[1].first * vertex_map[outStats[1].second].point) / pair_total;
+	// k = (found) ? k : 0;
+
+	// return vertex_map[outStats[0].second].point;
+	// return vertex_map[outStats[k].second].point;
+
+	double pair_total = outStats[0].first + outStats[1].first;
+	// double triple_total = outStats[0].first + outStats[1].first + outStats[2].first;
 
 	return (outStats[0].first * vertex_map[outStats[0].second].point + 
-			outStats[1].first * vertex_map[outStats[1].second].point + 
-			outStats[2].first * vertex_map[outStats[2].second].point) / triple_total;
+			outStats[1].first * vertex_map[outStats[1].second].point) / pair_total;
+
+	// return (outStats[0].first * vertex_map[outStats[0].second].point + 
+	// 		outStats[1].first * vertex_map[outStats[1].second].point + 
+	// 		outStats[2].first * vertex_map[outStats[2].second].point) / triple_total;
 }
 // ---------------------------------------------------------------------------------------------
 
@@ -144,7 +177,6 @@ std::vector<Point_2> SkeletalGraph::getVerticesAsCgalPoints() {
 	return vertices;
 }
 
-// void SkeletalGraph::spreadFromVertex(Vector2d v, std::vector<std::pair<double, size_t> >& outStats) {
 Vector2d SkeletalGraph::spreadSearchFromVertex(Vector2d v, Polygon_2& vispoly) {
 	bool found = false;
 
@@ -201,87 +233,6 @@ Vector2d SkeletalGraph::spreadSearchFromVertex(Vector2d v, Polygon_2& vispoly) {
 
 	return goal;
 }
-
-// ------------------------------------------------------------------------------------------
-
-// SkeletalGraphGeneric::SkeletalGraphGeneric(uint32_t c) {
-// 	count = c;
-// 	// graph = MatrixXd::Constant(c, c, std::numeric_limits<int>::max());
-// 	next_vid_available = 0;
-// 	next_eid_available = 0;
-// }
-
-// int SkeletalGraphGeneric::getVertexId(int vid, Point_2 p, double w) {
-// 	int the_id;
-
-// 	std::unordered_map<int, int>::iterator itr = id_map.find(vid);
-
-// 	if (itr == id_map.end()) {
-// 		the_id = next_vid_available;
-
-// 		vertex_map[the_id] = SkeletalNode{vid, w, 
-// 										  Vector2d(CGAL::to_double(p.x()), CGAL::to_double(p.y())), 
-// 										  std::vector<int>()};
-
-// 		id_map[vid] = the_id;
-// 		next_vid_available++;
-// 	} else {
-// 		the_id = itr->second;
-// 	}
-
-// 	return the_id;
-// }
-
-// void SkeletalGraphGeneric::addEdge(int vid1, Point_2 p1, double w1, 
-// 								   int vid2, Point_2 p2, double w2) {
-// 	int id1 = getVertexId(vid1, p1, w1);
-// 	int id2 = getVertexId(vid2, p2, w2);
-
-// 	double D = sqrt(pow(CGAL::to_double(p1.x() - p2.x()), 2) + 
-// 					pow(CGAL::to_double(p1.y() - p2.y()), 2));
-
-// 	// graph(id1, id2) = D;
-// 	// graph(id2, id1) = D;
-
-// 	int the_eid = next_eid_available;
-// 	edge_map[the_eid] = SkeletalEdgeGeneric{the_eid, id1, id2, D};
-
-// 	vertex_map[id1].edge_ids.push_back(the_eid);
-// 	vertex_map[id2].edge_ids.push_back(the_eid);
-
-// 	next_eid_available++;
-// 	total_work += D;
-// }
-
-// double SkeletalGraphGeneric::getTotalWork() {
-// 	return total_work;
-// }
-
-// Vector2d SkeletalGraphGeneric::getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
-// 										   bool immediate=false) {
-// 	return Vector2d(0., 0.);
-// }
-
-// uint32_t SkeletalGraphGeneric::getCount() {
-// 	return count;
-// }
-
-// Vector2d SkeletalGraphGeneric::getVertexById(int id) {
-// 	return vertex_map[id].point;
-// }
-
-// std::vector<Point_2> SkeletalGraphGeneric::getVerticesAsCgalPoints() {
-// 	std::vector<Point_2> vertices(count);
-
-// 	size_t i = 0;
-// 	std::unordered_map<int, SkeletalNode>::iterator sn_itr = vertex_map.begin();
-// 	for (; sn_itr != vertex_map.end(); sn_itr++) {
-// 		vertices[i] = Point_2(sn_itr->second.point(0), sn_itr->second.point(1));
-// 		i++;
-// 	}
-
-// 	return vertices;
-// }
 
 // ------------------------------------------------------------------------------------------
 

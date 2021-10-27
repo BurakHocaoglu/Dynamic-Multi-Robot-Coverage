@@ -20,6 +20,11 @@ set(CMAKE_BUILD_TYPE "Release")
 
 find_package(CGAL REQUIRED COMPONENTS Core)
 find_package(Boost REQUIRED COMPONENTS system)
+find_package(CGAL REQUIRED OPTIONAL_COMPONENTS Qt5)
+
+if(CGAL_Qt5_FOUND)
+  add_definitions(-DCGAL_USE_BASIC_VIEWER -DQT_NO_KEYWORDS)
+endif()
 
 add_message_files(
    FILES
@@ -79,4 +84,4 @@ add_executable(dist_coverage_node src/coverage_node.cpp src/coverage_agent.cpp s
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 
-target_link_libraries(dist_coverage_node ${catkin_LIBRARIES} CGAL::CGAL CGAL::CGAL_Core)
+target_link_libraries(dist_coverage_node ${catkin_LIBRARIES} CGAL::CGAL CGAL::CGAL_Core CGAL::CGAL_Qt5)

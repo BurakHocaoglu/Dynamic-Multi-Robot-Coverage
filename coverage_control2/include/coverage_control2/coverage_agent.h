@@ -22,7 +22,6 @@ class Agent {
 
 		void broadcast();
 		double calculate_workload();
-		double local_utility(const Vector2d& p);
 		void select_goal_from_local_frontier(std::vector<UtilityPair>& frontier);
 
 		void step();
@@ -35,6 +34,7 @@ class Agent {
 		void build_local_skeleton(std::vector<BoundarySegment>& bisectors, bool frontierFocus=false);
 		void compute_geometric_centroid();
 		double workload_utility(Point_2& p, std::vector<BoundarySegment>& bisectors);
+		double calculate_utility_non_uniform(Point_2& p, std::vector<BoundarySegment>& bisectors);
 
 		void get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 
 								  uint8_t neighbour_count, 
@@ -42,6 +42,7 @@ class Agent {
 								  VectorXd& b, 
 								  std::vector<BoundarySegment>& outRelevantBisectors);
 
+		void debug_cb(const std_msgs::Empty::ConstPtr& msg);
 		void state_cb(const AgentStateMsg::ConstPtr& msg);
 
 		bool handle_SetInitialPose(SetInitialPose::Request& req, SetInitialPose::Response& res);
@@ -54,6 +55,7 @@ class Agent {
 		ros::Publisher vl_voronoi_pub;
 		ros::Publisher state_pub;
 		ros::Publisher utility_debug_pub;
+		ros::Subscriber debug_sub;
 		ros::Subscriber state_sub;
 		ros::ServiceServer initPose_service;
 		ros::ServiceServer ready_service;
@@ -62,6 +64,7 @@ class Agent {
 		std::unordered_map<uint8_t, AgentState> neighbours;
 
 		bool is_ready;
+		bool debug_step;
 		uint8_t id;
 		std::string name;
 		Vector2d position;
@@ -81,13 +84,14 @@ class Agent {
 		uint16_t sample_count;
 
 		Polygon_2 region_boundary;
+		Polygon_2 region_boundary_bbox;
 		Polygon_2 inflated_outer_boundary;
+		Polygon_2 inflated_outer_boundary_bbox;
 
 		Polygon_2_Array region_holes;
 		Polygon_2_Array inflated_region_holes;
 
 		Polygon_with_holes_2 actual_region;
-		Arrangement_2 environment_arr;
 
 		std::vector<BoundarySegment> segments_to_avoid;
 		std::vector<Segment_2> vis_segments;

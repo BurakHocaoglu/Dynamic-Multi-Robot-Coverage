@@ -5,6 +5,7 @@ Agent::Agent(ros::NodeHandle& nh_, const std::string& name_, uint8_t id_) :
 	name(name_), 
 	id(id_), 
 	is_ready(false), 
+	debug_step(false), 
 	sample_count(30)
 {
 	position << 0.0, 0.0;
@@ -16,6 +17,7 @@ Agent::Agent(ros::NodeHandle& nh_, const std::string& name_, uint8_t id_) :
 	vl_voronoi_pub = nh.advertise<coverage_control2::HistoryStep>("/visibility_limited_voronoi", 1);
 	state_pub = nh.advertise<AgentStateMsg>("/states", 1);
 	utility_debug_pub = nh.advertise<coverage_control2::UtilityDebug>("/" + name + "/utility_debug", 1);
+	debug_sub = nh.subscribe("/debug_continue", 1, &Agent::debug_cb, this);
 	state_sub = nh.subscribe("/states", 10, &Agent::state_cb, this);
 	initPose_service = nh.advertiseService("/" + name + "/set_initial_pose", &Agent::handle_SetInitialPose, this);
 	ready_service = nh.advertiseService("/" + name + "/set_ready", &Agent::handle_SetReady, this);
@@ -51,37 +53,68 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 	region_boundary = c_bounds;
 	region_holes = c_holes;
 
-	Polygon_2_ptr_vector pieces = CGAL::create_exterior_skeleton_and_offset_polygons_2(-0.5, region_boundary, K());
+	// Polygon_2_ptr_vector pieces = CGAL::create_exterior_skeleton_and_offset_polygons_2(-m_params.physical_radius, region_boundary, K());
 
-	if (pieces.size() < 1) {
-		ROS_WARN("%s - Offset has failed! %lu items...", name.c_str(), pieces.size());
+	// if (pieces.size() < 1) {
+	// 	ROS_WARN("%s - Offset has failed! %lu items...", name.c_str(), pieces.size());
 
-		for (auto p : pieces) {
-			std::cout << *p << std::endl;
-		}
-		std::cout << std::endl;
+	// 	for (auto p : pieces) {
+	// 		std::cout << *p << std::endl;
+	// 	}
+	// 	std::cout << std::endl;
 
-		exit(EXIT_FAILURE);
-	}
+	// 	exit(EXIT_FAILURE);
+	// }
 
-	inflated_outer_boundary = *(pieces[0]);
+	// inflated_outer_boundary = *(pieces[0]);
+
+	create_offset_poly_naive(region_boundary, -m_params.physical_radius, inflated_outer_boundary);
 
 	if (inflated_outer_boundary.is_clockwise_oriented()) 
 		inflated_outer_boundary.reverse_orientation();
 
-	int rbnd_v_count = region_boundary.size();
+	ROS_INFO("%s - Inflated outer boundary has %d vertices", name.c_str(), (int)inflated_outer_boundary.size());
+
+	Bbox_2 rb_box = region_boundary.bbox();
+	region_boundary_bbox.push_back(Point_2(rb_box.xmin(), rb_box.ymin()));
+	region_boundary_bbox.push_back(Point_2(rb_box.xmax(), rb_box.ymin()));
+	region_boundary_bbox.push_back(Point_2(rb_box.xmax(), rb_box.ymax()));
+	region_boundary_bbox.push_back(Point_2(rb_box.xmin(), rb_box.ymax()));
+
+	Bbox_2 ob_box = inflated_outer_boundary.bbox();
+	inflated_outer_boundary_bbox.push_back(Point_2(ob_box.xmin() - 1., ob_box.ymin() - 1.));
+	inflated_outer_boundary_bbox.push_back(Point_2(ob_box.xmax() + 1., ob_box.ymin() - 1.));
+	inflated_outer_boundary_bbox.push_back(Point_2(ob_box.xmax() + 1., ob_box.ymax() + 1.));
+	inflated_outer_boundary_bbox.push_back(Point_2(ob_box.xmin() - 1., ob_box.ymax() + 1.));
+
+	// int rbnd_v_count = region_boundary.size();
+	// for (int i = 0; i < rbnd_v_count; i++) {
+	// 	int j = (i + 1) % rbnd_v_count;
+
+	// 	Vector2d normal(CGAL::to_double(region_boundary[i][1] - region_boundary[j][1]), 
+	// 					CGAL::to_double(region_boundary[j][0] - region_boundary[i][0]));
+
+	// 	Vector2d middle(CGAL::to_double(region_boundary[i][0] + region_boundary[j][0]), 
+	// 					CGAL::to_double(region_boundary[i][1] + region_boundary[j][1]));
+
+	// 	BoundarySegment seg = {0, normal, middle * 0.5};
+	// 	segments_to_avoid.push_back(seg);
+	// 	vis_segments.emplace_back(region_boundary[i], region_boundary[j]);
+	// }
+
+	int rbnd_v_count = region_boundary_bbox.size();
 	for (int i = 0; i < rbnd_v_count; i++) {
 		int j = (i + 1) % rbnd_v_count;
 
-		Vector2d normal(CGAL::to_double(region_boundary[i][1] - region_boundary[j][1]), 
-						CGAL::to_double(region_boundary[j][0] - region_boundary[i][0]));
+		Vector2d normal(CGAL::to_double(region_boundary_bbox[i][1] - region_boundary_bbox[j][1]), 
+						CGAL::to_double(region_boundary_bbox[j][0] - region_boundary_bbox[i][0]));
 
-		Vector2d middle(CGAL::to_double(region_boundary[i][0] + region_boundary[j][0]), 
-						CGAL::to_double(region_boundary[i][1] + region_boundary[j][1]));
+		Vector2d middle(CGAL::to_double(region_boundary_bbox[i][0] + region_boundary_bbox[j][0]), 
+						CGAL::to_double(region_boundary_bbox[i][1] + region_boundary_bbox[j][1]));
 
 		BoundarySegment seg = {0, normal, middle * 0.5};
 		segments_to_avoid.push_back(seg);
-		vis_segments.emplace_back(region_boundary[i], region_boundary[j]);
+		vis_segments.emplace_back(region_boundary_bbox[i], region_boundary_bbox[j]);
 	}
 
 	int h_count = region_holes.size();
@@ -99,24 +132,27 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 
 			// BoundarySegment seg = {normal, middle * 0.5};
 			// segments_to_avoid.push_back(seg);
-			// exact_vis_segments.emplace_back(region_holes[i][j], region_holes[i][k]);
 			vis_segments.emplace_back(region_holes[i][j], region_holes[i][k]);
 		}
 
-		Polygon_2_ptr_vector hole_pieces = CGAL::create_exterior_skeleton_and_offset_polygons_2(-0.5, region_holes[i], K());
+		// Polygon_2_ptr_vector hole_pieces = CGAL::create_exterior_skeleton_and_offset_polygons_2(-m_params.physical_radius, region_holes[i], K());
 
-		if (hole_pieces.size() < 1) {
-			ROS_WARN("%s - Hole offset has failed! %lu items...", name.c_str(), hole_pieces.size());
+		// if (hole_pieces.size() < 1) {
+		// 	ROS_WARN("%s - Hole offset has failed! %lu items...", name.c_str(), hole_pieces.size());
 
-			for (auto hp : hole_pieces) {
-				std::cout << *hp << std::endl;
-			}
-			std::cout << std::endl;
+		// 	for (auto hp : hole_pieces) {
+		// 		std::cout << *hp << std::endl;
+		// 	}
+		// 	std::cout << std::endl;
 
-			exit(EXIT_FAILURE);
-		}
+		// 	exit(EXIT_FAILURE);
+		// }
 
-		inflated_region_holes.push_back(*(hole_pieces[0]));
+		// inflated_region_holes.push_back(*(hole_pieces[0]));
+
+		Polygon_2 inflated_region_hole_i;
+		create_offset_poly_naive(region_holes[i], -m_params.physical_radius, inflated_region_hole_i);
+		inflated_region_holes.push_back(inflated_region_hole_i);
 	}
 
 	for (int i = 0; i < h_count; i++) {
@@ -124,15 +160,11 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 			inflated_region_holes[i].reverse_orientation();
 	}
 
-	// actual_region = Polygon_with_holes_2(region_boundary, 
-	// 									 region_holes.begin(), 
-	// 									 region_holes.end());
-
 	actual_region = Polygon_with_holes_2(inflated_outer_boundary, 
 										 inflated_region_holes.begin(), 
 										 inflated_region_holes.end());
 
-	CGAL::insert_non_intersecting_curves(environment_arr, vis_segments.begin(), vis_segments.end());
+	CGAL::draw(actual_region);
 }
 
 bool Agent::ready() {
@@ -144,14 +176,8 @@ bool Agent::is_point_valid(const Point_2& p) {
 	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 		return false;
 
-	// if (inflated_outer_boundary.bounded_side(p) == CGAL::ON_UNBOUNDED_SIDE) 
-	// 	return false;
-
 	Polygon_2_Array::iterator itr = inflated_region_holes.begin();
 	for (; itr != inflated_region_holes.end(); itr++) {
-		// if (itr->bounded_side(p) != CGAL::ON_UNBOUNDED_SIDE) 
-		// 	return false;
-
 		inside_check = CGAL::oriented_side(p, *itr);
 		if (inside_check == CGAL::ON_ORIENTED_BOUNDARY || inside_check == CGAL::POSITIVE) 
 			return false;
@@ -200,17 +226,6 @@ double Agent::calculate_workload() {
 	return CGAL::to_double(outer_area) - negative_workload;
 }
 
-double Agent::local_utility(const Vector2d& p) {
-	double value = 0.0;
-
-	Vector2d hvec(cos(heading), sin(heading));
-	value += hvec.dot(p - position);
-
-	// ...
-
-	return value;
-}
-
 void Agent::select_goal_from_local_frontier(std::vector<UtilityPair>& frontier) {
 	if (frontier.empty()) {
 		ROS_WARN("%s has no valid frontier vertices!", name.c_str());
@@ -232,7 +247,6 @@ void Agent::step() {
 	std::vector<BoundarySegment> neighbour_segments;
 
 	visibility_polygon();
-	// ROS_INFO("%s has computed visibility!", name.c_str());
 
 	std::unordered_map<uint8_t, AgentState>::iterator itr = neighbours.begin();
 	for (; itr != neighbours.end(); itr++) {
@@ -241,10 +255,8 @@ void Agent::step() {
 
 		// Point_2 cgal_point(itr->second.position(0), itr->second.position(1));
 		// auto inside_check = CGAL::oriented_side(cgal_point, current_visibility_poly);
-		// if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && 
-		// 	inside_check != CGAL::POSITIVE) {
+		// if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 		// 	continue;
-		// }
 
 		Vector2d r_ij = itr->second.position - position;
 		Vector2d m_ij = (position + itr->second.position) * 0.5;
@@ -307,7 +319,6 @@ void Agent::step() {
 
 	get_voronoi_cell_raw(neighbour_segments, agents_to_consider, A, b, relevantBisectors);
 
-	// visibility_limited_voronoi();
 	visibility_limited_voronoi(relevantBisectors, theFrontier);
 
 	if (b_settings.centroid_alg == CentroidAlgorithm::UNKNOWN) {
@@ -364,18 +375,14 @@ void Agent::step() {
 
 void Agent::visibility_polygon() {
 	Polygon_2 new_visibility_poly;
-	// Arrangement_2 current_visibility;
 	Arrangement_2 local_env_context, current_visibility;
 	CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
 
 	Point_2 query(position(0), position(1));
 	CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
-	// CGAL::Arr_naive_point_location<Arrangement_2> pl(environment_arr);
 	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
 
 	TEV tev(local_env_context);
-	// TEV tev(environment_arr);
-
 	Face_handle fh;
 
 	if (obj.which() == 0) {
@@ -423,16 +430,17 @@ void Agent::visibility_polygon() {
 
 void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors, 
 									   std::vector<UtilityPair>& outFrontier) {
-
 	std::list<Polygon_with_holes_2> intersection_pieces;
 
 	// CGAL::intersection(current_visibility_poly, 
 	// 				   current_cvx_voronoi, 
 	// 				   std::back_inserter(intersection_pieces));
 
-	CGAL::intersection(actual_region, 
-					   current_cvx_voronoi, 
+	CGAL::intersection(actual_region, current_cvx_voronoi, 
 					   std::back_inserter(intersection_pieces));
+
+	// CGAL::intersection(current_cvx_voronoi, actual_region, 
+	// 				   std::back_inserter(intersection_pieces));
 
 	int n_pieces = intersection_pieces.size();
 
@@ -473,11 +481,13 @@ void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors,
 					break;
 				}
 			}
-		}
 
-		if (!located) {
+			if (!located) {
+				intr_piece = intersection_pieces.front();
+				ROS_WARN("%s - could not be located in one of the intersections!", name.c_str());
+			}
+		} else {
 			intr_piece = intersection_pieces.front();
-			// ROS_WARN("%s - could not be located in one of the intersections!", name.c_str());
 		}
 
 		coverage_control2::HistoryStep hist_step;
@@ -485,24 +495,13 @@ void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors,
 		hist_step.position.x = position(0);
 		hist_step.position.y = position(1);
 
-		// coverage_control2::UtilityDebug utilities;
-		// utilities.id = id;
-
 		VertexIterator v_itr = intr_piece.outer_boundary().vertices_begin();
 		for (; v_itr != intr_piece.outer_boundary().vertices_end(); v_itr++) {
 			geometry_msgs::Point vlvp_point;
 			vlvp_point.x = CGAL::to_double(v_itr->x());
 			vlvp_point.y = CGAL::to_double(v_itr->y());
 			hist_step.cell.outer_boundary.points.push_back(vlvp_point);
-
-			// double u_i = workload_utility(*v_itr, bisectors);
-			// outFrontier.push_back(std::make_pair(u_i, 
-			// 									 Vector2d(CGAL::to_double(v_itr->x()), 
-			// 											  CGAL::to_double(v_itr->y()))));
-			// utilities.data.push_back(u_i);
 		}
-
-		// utility_debug_pub.publish(utilities);
 
 		HoleIterator h_itr = intr_piece.holes_begin();
 		for (; h_itr != intr_piece.holes_end(); h_itr++) {
@@ -583,10 +582,7 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 		seen_edges[htr->opposite()->id()] = true;
 	}
 
-	// if (id == 1)
-	// 	std::cout << "------\n";
-
-	skeletal_map.refineEdges();
+	// skeletal_map.refineEdges();
 
 	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
 	target = skeletal_map.getCentroid(stats);
@@ -645,22 +641,14 @@ double Agent::workload_utility(Point_2& p, std::vector<BoundarySegment>& bisecto
 
 		if (std::fabs(d_u) <= m_params.physical_radius) {
 			utility += neighbours[b_itr->mirror_id].workload - current_workload;
-
-			// if (id == 1) {
-			// 	ROS_INFO("%s - (%.3f, %.3f) %.3f to %d", name.c_str(), CGAL::to_double(p.x()), 
-			// 														   CGAL::to_double(p.y()), 
-			// 														   d_u, b_itr->mirror_id);
-			// }
 		}
 	}
 
-	// if (id == 1) {
-	// 	ROS_INFO("%s - (%.3f, %.3f, %.3f)", name.c_str(), CGAL::to_double(p.x()), 
-	// 													  CGAL::to_double(p.y()), 
-	// 													  utility);
-	// }
-
 	return utility;
+}
+
+double Agent::calculate_utility_non_uniform(Point_2& p, std::vector<BoundarySegment>& bisectors) {
+	//
 }
 
 void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 
@@ -668,6 +656,7 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 								 ConstraintMatrix2d& A, 
 								 VectorXd& b, 
 								 std::vector<BoundarySegment>& outRelevantBisectors) {
+
 	std::unordered_map<int, bool> relevantSegmentIndices;
 	std::vector<Point_2> cvx_voronoi_vertices;
 	int n_segments = segments.size();
@@ -692,7 +681,8 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 			Vector2d p_intr = A_intr.colPivHouseholderQr().solve(b_intr);
 			Point_2 cgal_point(p_intr(0), p_intr(1));
 
-			auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
+			// auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
+			auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary_bbox);
 			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 				continue;
 
@@ -739,7 +729,8 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 			Vector2d p_intr = A_intr.colPivHouseholderQr().solve(b_intr);
 			Point_2 cgal_point(p_intr(0), p_intr(1));
 
-			auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
+			// auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
+			auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary_bbox);
 			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 				continue;
 
@@ -755,8 +746,10 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 	}
 
 	// Outer boundary vertices
-	VertexIterator bnd_v_itr = region_boundary.vertices_begin();
-	for (; bnd_v_itr != region_boundary.vertices_end(); bnd_v_itr++) {
+	// VertexIterator bnd_v_itr = region_boundary.vertices_begin();
+	// for (; bnd_v_itr != region_boundary.vertices_end(); bnd_v_itr++) {
+	VertexIterator bnd_v_itr = region_boundary_bbox.vertices_begin();
+	for (; bnd_v_itr != region_boundary_bbox.vertices_end(); bnd_v_itr++) {
 		Vector2d vertex(CGAL::to_double(bnd_v_itr->x()), 
 						CGAL::to_double(bnd_v_itr->y()));
 
@@ -822,6 +815,13 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 	} else {
 		ROS_WARN("%s - Not enough valid voronoi vertices!", name.c_str());
 	}
+}
+
+void Agent::debug_cb(const std_msgs::Empty::ConstPtr& msg) {
+	if (!debug_step)
+		debug_step = true;
+
+	CGAL::draw(actual_region);
 }
 
 void Agent::state_cb(const AgentStateMsg::ConstPtr& msg) {

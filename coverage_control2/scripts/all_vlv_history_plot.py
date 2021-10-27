@@ -8,6 +8,7 @@ import threading
 import traceback
 import numpy as np
 import skgeom as sg
+import shapely.geometry as shgeom
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -45,6 +46,78 @@ def get_skeleton(poly, holes=[]):
 
 	return sg.skeleton.create_interior_straight_skeleton(full_poly)
 
+def is_state_valid(q, poly, holes=[]):
+	if poly is None:
+		return False
+
+	if not poly.contains(q):
+		return False
+
+	for hole in holes:
+		if hole.contains(q):
+			return False
+
+	return True
+
+def get_metric_graph(poly, holes=[]):
+	v_in, v_b = [], []
+
+	resolution = 4.
+	dense_resolution = resolution / 2.
+	poly_shgeom = shgeom.Polygon(shell=poly, holes=[hole for hole in holes]).buffer(-resolution / 2.)
+	xmin, ymin, xmax, ymax = poly_shgeom.bounds
+
+	xidx = xmin
+	while xidx < xmax:
+		yidx = ymin
+		while yidx < ymax:
+			p = shgeom.Point(xidx, yidx)
+
+			if poly_shgeom.contains(p):
+				v_in.append((xidx, yidx))
+
+			yidx += resolution
+		xidx += resolution
+
+	# for i in range(len(poly)):
+	# 	j = (i + 1) % len(poly)
+	# 	d = poly[j] - poly[i]
+	# 	norm = np.linalg.norm(d)
+	# 	nSteps = norm / dense_resolution
+	# 	d *= dense_resolution / norm
+	# 	n = np.array((-d[1], d[0]), dtype=float)
+
+	# 	k = 0
+	# 	while k <= nSteps + 1:
+	# 		p_raw = poly[i] + k * d + n
+	# 		p = shgeom.Point(p_raw[0], p_raw[1])
+
+	# 		if poly_shgeom.contains(p):
+	# 			v_b.append(p_raw)
+
+	# 		k += resolution
+
+	# for hole in holes:
+	# 	for i in range(len(hole)):
+	# 		j = (i + 1) % len(hole)
+	# 		d = hole[j] - hole[i]
+	# 		norm = np.linalg.norm(d)
+	# 		nSteps = norm / dense_resolution
+	# 		d *= dense_resolution / norm
+	# 		n = np.array((-d[1], d[0]), dtype=float)
+
+	# 		k = 0
+	# 		while k <= nSteps + 1:
+	# 			p_raw = hole[i] + k * d + n
+	# 			p = shgeom.Point(p_raw[0], p_raw[1])
+
+	# 			if poly_shgeom.contains(p):
+	# 				v_b.append(p_raw)
+
+	# 			k += dense_resolution
+
+	return v_in, v_b
+
 def animate_history(i, ax, lims, hist):
 	try:
 		ax.clear()
@@ -67,10 +140,10 @@ def animate_history(i, ax, lims, hist):
 				holes = hist_piece["holes"][i]
 				robot_color = globals()["__COLORS"][int(aid)]
 				ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
-				ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3, zorder=2))
+				ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.1, zorder=2))
 
 				for h in holes:
-					ax.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=0.8, zorder=1))
+					ax.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=0.5, zorder=1))
 
 				skeleton = get_skeleton(poly, holes)
 				for h in skeleton.halfedges:
@@ -79,9 +152,20 @@ def animate_history(i, ax, lims, hist):
 						p2 = h.opposite.vertex.point
 						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
 
-				for v in skeleton.vertices:
-					plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
-														   v.time, color='blue', fill=False))
+				# for v in skeleton.vertices:
+				# 	plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
+				# 										   v.time, color='blue', fill=False))
+
+				mg_in, mg_b = get_metric_graph(np.array(poly, dtype=float), 
+												[np.array(h, dtype=float) for h in holes])
+
+				if len(mg_in) > 0:
+					mg_in_xs, mg_in_ys = zip(*mg_in)
+					ax.scatter(mg_in_xs, mg_in_ys, s=0.5, color=robot_color)
+
+				if len(mg_b) > 0:
+					mg_b_xs, mg_b_ys = zip(*mg_b)
+					ax.scatter(mg_b_xs, mg_b_ys, s=0.5, color=robot_color)
 
 	except Exception as e:
 		# raise e
@@ -89,7 +173,7 @@ def animate_history(i, ax, lims, hist):
 
 def history_iterator(hist):
 	while not globals()["stop"] or globals()["history_index"] < len(hist):
-		time.sleep(0.2)
+		time.sleep(0.5)
 		globals()["history_index"] += 1
 
 def customSigintHandler(signum, frame):
@@ -116,7 +200,7 @@ if __name__ == "__main__":
 	    "obs2": [[20., 60.], [60., 60.], [60., 20.], [20., 20.]],
 		"obs3": [[20., -20.], [60., -20.], [60., -60.], [20., -60.]],
 		"obs4": [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]],
-		"obs5": [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]],
+		# "obs5": [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]],
 	}
 	# exp_obstacles = {
 	# 	"obs1": [[50., 90.], [40., 60.], [10., 60.], [20., 90.]],

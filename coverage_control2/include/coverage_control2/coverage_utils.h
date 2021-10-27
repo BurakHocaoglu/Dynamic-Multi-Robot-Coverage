@@ -6,6 +6,7 @@
 #include <ros/ros.h>
 #include <XmlRpcValue.h>
 
+#include <std_msgs/Empty.h>
 #include <std_msgs/String.h>
 #include <std_srvs/Trigger.h>
 #include <geometry_msgs/Point.h>
@@ -49,6 +50,7 @@
 
 // #include "coverage_control2/geodesic_center.hpp"
 
+#include "draw_polygon_with_holes_2.h"
 #include "dump_to_eps.h"
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel K;
@@ -62,6 +64,7 @@ typedef Polygon_with_holes_2::Hole_iterator HoleIterator;
 
 typedef K::Line_2 Line_2;
 typedef K::Segment_2 Segment_2;
+typedef CGAL::Bbox_2 Bbox_2;
 typedef CGAL::Arr_segment_traits_2<K> Traits_2;
 typedef CGAL::Arrangement_2<Traits_2> Arrangement_2;
 typedef Traits_2::Point_2 Arr_Point_2;
@@ -161,6 +164,9 @@ struct SkeletalNode {
 	double weight;
 };
 
+void get_metric_graph(Polygon_with_holes_2& polygon, double resolution, 
+					  std::vector<Point_2>& outPoints);
+
 class SkeletalGraph {
 	public:
 		SkeletalGraph(uint32_t c);
@@ -182,6 +188,7 @@ class SkeletalGraph {
 
 	private:
 		MatrixXd graph;
+		MatrixXd paths;
 		uint32_t count;
 		double total_work;
 		int next_id_available;
@@ -198,6 +205,24 @@ inline void create_poly_from_raw(XmlRpc::XmlRpcValue& data, Polygon_2& out_poly,
 
 	if (is_outer_boundary && out_poly.is_clockwise_oriented()) 
 		out_poly.reverse_orientation();
+}
+
+inline void create_offset_poly_naive(Polygon_2& in_poly, double l, Polygon_2& out_poly) {
+	assert(out_poly.size() == 0);
+
+	int nVertices = in_poly.size();
+	for (int i = 0; i < nVertices; i++) {
+		int j = (i - 1 + nVertices) % nVertices;
+		int k = (i + 1) % nVertices;
+
+		Vector_2 v1(in_poly[k], in_poly[i]);
+		Vector_2 v2(in_poly[j], in_poly[i]);
+		Vector_2 d = v1 + v2;
+		double norm = sqrt(pow(CGAL::to_double(d.x()), 2) + pow(CGAL::to_double(d.y()), 2));
+		d /= norm;
+
+		out_poly.push_back(in_poly[i] + l * d);
+	}
 }
 
 inline void angular_sort(std::vector<Point_2>& V, Point_2& ref) {

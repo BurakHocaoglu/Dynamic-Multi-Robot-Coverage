@@ -1,5 +1,24 @@
 #include "coverage_control2/coverage_utils.h"
 
+void get_metric_graph(Polygon_with_holes_2& polygon, double resolution, 
+					  std::vector<Point_2>& outPoints) {
+	Bbox_2 bbox = polygon.outer_boundary().bbox();
+
+	for (double xidx = bbox.xmin(); xidx < bbox.xmax(); xidx += resolution) {
+		for (double yidx = bbox.ymin(); yidx < bbox.ymax(); yidx += resolution) {
+			Point_2 p(xidx, yidx);
+
+			auto inside_check = CGAL::oriented_side(p, polygon);
+			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+				continue;
+
+			outPoints.push_back(p);
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------------------------
+
 SkeletalGraph::SkeletalGraph(uint32_t c) {
 	count = c;
 	// graph = MatrixXd::Zero(c, c);

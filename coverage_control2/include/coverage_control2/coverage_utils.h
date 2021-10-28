@@ -208,6 +208,7 @@ class SkeletalGraph {
 		double total_work;
 		int next_id_available;
 		std::unordered_map<int, int> id_map;
+		std::unordered_map<int, int> rid_map;
 		std::unordered_map<int, SkeletalNode> vertex_map;
 };
 

@@ -38,6 +38,7 @@ int SkeletalGraph::getVertexId(int vid, Point_2 p, double w, bool c) {
 										 				CGAL::to_double(p.y())), w};
 
 		id_map[vid] = the_id;
+		rid_map[the_id] = vid;
 		next_id_available++;
 	} else {
 		the_id = itr->second;
@@ -201,16 +202,7 @@ std::vector<Point_2> SkeletalGraph::getVerticesAsCgalPoints() {
 }
 
 Vector2d SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vector2d& toV) {
-	// int i = 0;
 	bool found = false;
-
-	// for (; i < count; i++) {
-	// 	if ((vertex_map[id_map[i]].point - toV).norm() < 0.1) {
-	// 		found = true;
-	// 		break;
-	// 	}
-	// }
-
 	std::unordered_map<int, SkeletalNode>::iterator v_itr = vertex_map.begin();
 	for (; v_itr != vertex_map.end(); v_itr++) {
 		if ((v_itr->second.point - toV).norm() < 0.1) {
@@ -224,23 +216,28 @@ Vector2d SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vector2d& toV) {
 		return fromV;
 	}
 
-	// ...
+	std::priority_queue<std::pair<double, int> > search_frontier;
+	std::unordered_map<int, bool> visited;
 
-	// int vid = id_map[i];
-	// int j = paths(i);
-	// std::vector<UtilityPair> distances;
+	// id_map  -- KEY: skeleton id - VAL: graph id
+	// rid_map -- KEY: graph id    - VAL: skeleton id
 
-	// while (j != i) {
-	// 	distances.emplace_back((vertex_map[j].point - fromV).norm(), vertex_map[j].point);
-	// 	j = paths(j);
+	// search_frontier.push(std::make_pair((v_itr->second.point - fromV).norm(), id_map[v_itr->second.id]));
+
+	// while (!search_frontier.empty()) {
+	// 	std::pair<double, int> next = search_frontier.top();
+	// 	search_frontier.pop();
+
+	// 	int gid = rid_map[next.second];
+	// 	for (int j = 0; j < count; j++) {
+	// 		if (gid == j)
+	// 			continue;
+
+	// 		if (graph(gid, j) > 0) {
+	// 			search_frontier.push(std::make_pair((), rid_map[]));
+	// 		}
+	// 	}
 	// }
-
-	// std::vector<UtilityPair>::iterator g_itr = std::min_element(distances.begin(), distances.end(), 
-	// 															[&](UtilityPair p1, UtilityPair p2){
-	// 																return p1.first < p2.first;
-	// 															});
-
-	// return g_itr->second;
 
 	return toV;
 }

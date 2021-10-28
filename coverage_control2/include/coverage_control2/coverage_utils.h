@@ -34,6 +34,7 @@
 #include <utility>
 #include <algorithm>
 #include <unordered_map>
+#include <functional>
 
 #include <Eigen/Dense>
 
@@ -48,9 +49,13 @@
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 #include <CGAL/create_offset_polygons_from_polygon_with_holes_2.h>
 
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point.hpp>
+#include <boost/geometry/index/rtree.hpp>
+
 // #include "coverage_control2/geodesic_center.hpp"
 
-#include "draw_polygon_with_holes_2.h"
+// #include "draw_polygon_with_holes_2.h"
 #include "dump_to_eps.h"
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel K;
@@ -95,6 +100,14 @@ typedef std::pair<double, Vector2d> UtilityPair;
 
 typedef coverage_control2::AgentState AgentStateMsg;
 typedef coverage_control2::SetInitialPose SetInitialPose;
+
+namespace bg = boost::geometry;
+namespace bgi = boost::geometry::index;
+
+typedef bg::model::point<double, 2, bg::cs::cartesian> MGPoint;
+typedef bg::model::box<point> MGBox;
+typedef std::pair<MGPoint, unsigned> MGValue;
+typedef bgi::rtree<MGValue, bgi::quadratic<16> > MGRTree;
 
 enum CentroidAlgorithm {
 	UNKNOWN=0,
@@ -184,7 +197,8 @@ class SkeletalGraph {
 		uint32_t getCount();
 		Vector2d getVertexById(int id);
 		std::vector<Point_2> getVerticesAsCgalPoints();
-		Vector2d spreadSearchFromVertex(Vector2d v, Polygon_2& vispoly);
+		std::vector<Vector2d> getPathToVertex(Vector2d& inV);
+		double non_uniform_utility(Point_2& p, std::vector<BoundarySegment>& bisectors);
 
 	private:
 		MatrixXd graph;
@@ -233,6 +247,20 @@ inline void angular_sort(std::vector<Point_2>& V, Point_2& ref) {
 					   atan2(CGAL::to_double(p2.y() - ref.y()), 
 					   		 CGAL::to_double(p2.x() - ref.x()));
 			});
+}
+
+inline void get_nearest_neighbours(Point_2& q, double r, MGRTree& inTree, 
+								   std::vector<MGValue>& outValues) {
+	MGPoint qpoint(CGAL::to_double(q.x()), CGAL::to_double(q.y()));
+
+	MGBox qbox(MGPoint(CGAL::to_double(q.x()) - r, CGAL::to_double(q.y()) - r), 
+			   MGPoint(CGAL::to_double(q.x()) + r, CGAL::to_double(q.y()) + r));
+
+	inTree.query(bgi::within(qbox), 
+				 bgi::satisfies([&] (MGValue const& v) {
+				 	return bg::distance(v.first, qpoint) < r;
+				 }), 
+				 std::back_inserter(outValues));
 }
 
 // ---------------------------------------------------------------------------------------------

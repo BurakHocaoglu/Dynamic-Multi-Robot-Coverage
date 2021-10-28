@@ -115,12 +115,29 @@ Vector2d SkeletalGraph::getLargestNode(std::vector<std::pair<double, size_t> >& 
 // Vector2d SkeletalGraph::getCentroid(bool immediate=false) {
 Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
 									bool immediate) {
+
+	for (int i = 0; i < count; i++) {
+		for (int j = 0; j < count; j++) {
+			if (i == j)
+				paths(i, j) = 0.;
+			else if (graph(i, j) != std::numeric_limits<int>::max())
+				paths(i, j) = i;
+			else
+				paths(i, j) = -1;
+		}
+	}
+
 	for (int k = 0; k < count; k++) {
 		for (int i = 0; i < count; i++) {
 			for (int j = 0; j < count; j++) {
-				if (graph(i, k) + graph(k, j) < graph(i, j)) 
+				if (graph(i, k) + graph(k, j) < graph(i, j)) {
 					graph(i, j) = graph(i, k) + graph(k, j);
+					paths(i, j) = paths(k, j);
+				}
 			}
+
+			if (graph(i, i) < 0.)
+				std::cout << "NEGATIVE CYCLE FOUND!!!\n";
 		}
 	}
 
@@ -196,61 +213,18 @@ std::vector<Point_2> SkeletalGraph::getVerticesAsCgalPoints() {
 	return vertices;
 }
 
-Vector2d SkeletalGraph::spreadSearchFromVertex(Vector2d v, Polygon_2& vispoly) {
-	bool found = false;
+std::vector<Vector2d> SkeletalGraph::getPathToVertex(Vector2d& inV) {
+	std::vector<Vector2d> path;
 
-	int gv_idx;
-	std::unordered_map<int, SkeletalNode>::iterator sn_itr = vertex_map.begin();
-	for (; sn_itr != vertex_map.end(); sn_itr++) {
-		if ((v - sn_itr->second.point).norm() < 0.01) {
-			gv_idx = sn_itr->first;
-			found = true;
-			break;
-		}
+	for (int i = 0; i < count; i++) {
+		double d = 
+		if ()
 	}
+	return std::vector<Vector2d>(1);
+}
 
-	if (!found) {
-		std::cout << "The requested vertex is not in the graph!!!\n";
-		return v;
-	}
-
-	std::vector<bool> visited(count);
-	std::queue<int> gvq;
-	gvq.push(gv_idx);
-	Vector2d goal;
-
-	while (!gvq.empty()) {
-		found = false;
-		int i = gvq.back();
-		gvq.pop();
-
-		for (int j = 0; j < count; j++) {
-			if (!graph(i, j)) 
-				continue;
-
-			Vector2d vertex = vertex_map[j].point;
-			Point_2 cand(vertex(0), vertex(1));
-			auto inside_check = CGAL::oriented_side(cand, vispoly);
-			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-				continue;
-
-			else {
-				goal = vertex;
-				found = true;
-				break;
-			}
-		}
-
-		if (found)
-			break;
-	}
-
-	if (!found) {
-		std::cout << "Could not find the vertex to the highest utility target! What to do?\n";
-		goal = v;
-	}
-
-	return goal;
+double SkeletalGraph::non_uniform_utility(Point_2& p, std::vector<BoundarySegment>& bisectors) {
+	return 0.;
 }
 
 // ------------------------------------------------------------------------------------------

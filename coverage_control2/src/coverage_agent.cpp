@@ -164,7 +164,7 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 										 inflated_region_holes.begin(), 
 										 inflated_region_holes.end());
 
-	CGAL::draw(actual_region);
+	// CGAL::draw(actual_region);
 }
 
 bool Agent::ready() {
@@ -573,7 +573,7 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 
 		if (c1 && c2) {
 			ROS_WARN("%s - Contour halfedge detected. This should not be executed!", name.c_str());
-		} 
+		}
 
 		skeletal_map.addEdge(vid1, htr->vertex()->point(), u1, c1, 
 							 vid2, htr->opposite()->vertex()->point(), u2, c2);
@@ -582,26 +582,115 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 		seen_edges[htr->opposite()->id()] = true;
 	}
 
-	// skeletal_map.refineEdges();
+	if (frontierFocus) {
+		MGRTree metric_nn_rtree;
+		std::vector<Point_2> metric_graph_points;
 
-	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
-	target = skeletal_map.getCentroid(stats);
-	// target = skeletal_map.getLargestNode(stats);
+		get_metric_graph(current_work_region, m_params.physical_radius * 4., metric_graph_points);
 
-	current_workload = calculate_workload();
-	largest_workload = stats[0].first;
-	// largest_workload = 0.; // Wrong, but does not matter for now...
+		size_t i = 0;
+		for (Point_2& mgp : metric_graph_points) {
+			metric_nn_rtree.insert(std::make_pair(MGPoint(CGAL::to_double(mgp.x()), 
+														  CGAL::to_double(mgp.y())), i));
+		}
 
-	for (size_t j = 0; j < skeletal_map.getCount(); j++) {
-		goal = skeletal_map.getVertexById(stats[j].second);
+		std::vector<UtilityPair> super_nodes;
 
-		Point_2 cgal_goal_candidate(goal(0), goal(1));
-		auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
-		if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-			continue;
+		// auto htr = current_skeleton->halfedges_begin();
+		// for (; htr != current_skeleton->halfedges_end(); htr++) {
+		// 	auto shtr = seen_edges.find(htr->id());
+		// 	if (shtr != seen_edges.end()) 
+		// 		continue;
 
-		else 
-			break;
+		// 	if (!htr->is_bisector()) 
+		// 		continue;
+
+		// 	int vid1 = htr->vertex()->id();
+		// 	int vid2 = htr->opposite()->vertex()->id();
+
+		// 	Point_2 p1 = htr->vertex()->point();
+		// 	Point_2 p2 = htr->opposite()->vertex()->point();
+
+		// 	double u1 = workload_utility(p1, inBisectors) / total_workload;
+		// 	double u2 = workload_utility(p2, inBisectors) / total_workload;
+
+		// 	bool c1 = htr->vertex()->is_contour();
+		// 	bool c2 = htr->opposite()->vertex()->is_contour();
+
+		// 	std::vector<MGValue> local_mg_points;
+
+		// 	if (c1 && c2) {
+		// 		ROS_WARN("%s - Contour halfedge detected. This should not be executed!", name.c_str());
+		// 	} else if (!c1) {
+		// 		get_nearest_neighbours(p1, htr->vertex()->time(), metric_nn_rtree, local_mg_points);
+		// 	} else if (!c2) {
+		// 		get_nearest_neighbours(p2, htr->opposite()->vertex()->time(), 
+		// 							   metric_nn_rtree, local_mg_points);
+		// 	} else {
+		// 		ROS_WARN("%s - WTF!?", name.c_str());
+		// 	}
+
+		// 	skeletal_map.addEdge(vid1, htr->vertex()->point(), u1, c1, 
+		// 						 vid2, htr->opposite()->vertex()->point(), u2, c2);
+
+		// 	seen_edges[htr->id()] = true;
+		// 	seen_edges[htr->opposite()->id()] = true;
+		// }
+
+	} else {
+		// auto htr = current_skeleton->halfedges_begin();
+		// for (; htr != current_skeleton->halfedges_end(); htr++) {
+		// 	auto shtr = seen_edges.find(htr->id());
+		// 	if (shtr != seen_edges.end()) 
+		// 		continue;
+
+		// 	if (!htr->is_bisector()) 
+		// 		continue;
+
+		// 	int vid1 = htr->vertex()->id();
+		// 	int vid2 = htr->opposite()->vertex()->id();
+
+		// 	Point_2 p1 = htr->vertex()->point();
+		// 	Point_2 p2 = htr->opposite()->vertex()->point();
+
+		// 	double u1 = workload_utility(p1, inBisectors) / total_workload;
+		// 	double u2 = workload_utility(p2, inBisectors) / total_workload;
+
+		// 	bool c1 = htr->vertex()->is_contour();
+		// 	bool c2 = htr->opposite()->vertex()->is_contour();
+
+		// 	if (c1 && c2) {
+		// 		ROS_WARN("%s - Contour halfedge detected. This should not be executed!", name.c_str());
+		// 	}
+
+		// 	skeletal_map.addEdge(vid1, htr->vertex()->point(), u1, c1, 
+		// 						 vid2, htr->opposite()->vertex()->point(), u2, c2);
+
+		// 	seen_edges[htr->id()] = true;
+		// 	seen_edges[htr->opposite()->id()] = true;
+		// }
+
+		skeletal_map.refineEdges();
+
+		std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
+		target = skeletal_map.getCentroid(stats);
+		// target = skeletal_map.getLargestNode(stats);
+
+		current_workload = calculate_workload();
+		largest_workload = stats[0].first;
+		// largest_workload = 0.; // Wrong, but does not matter for now...
+
+		for (size_t j = 0; j < skeletal_map.getCount(); j++) {
+			goal = skeletal_map.getVertexById(stats[j].second);
+
+			Point_2 cgal_goal_candidate(goal(0), goal(1));
+			auto inside_check = CGAL::oriented_side(cgal_goal_candidate, current_visibility_poly);
+			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+				continue;
+
+			else 
+				break;
+		}
 	}
 }
 
@@ -645,10 +734,6 @@ double Agent::workload_utility(Point_2& p, std::vector<BoundarySegment>& bisecto
 	}
 
 	return utility;
-}
-
-double Agent::calculate_utility_non_uniform(Point_2& p, std::vector<BoundarySegment>& bisectors) {
-	//
 }
 
 void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 
@@ -821,7 +906,7 @@ void Agent::debug_cb(const std_msgs::Empty::ConstPtr& msg) {
 	if (!debug_step)
 		debug_step = true;
 
-	CGAL::draw(actual_region);
+	// CGAL::draw(actual_region);
 }
 
 void Agent::state_cb(const AgentStateMsg::ConstPtr& msg) {

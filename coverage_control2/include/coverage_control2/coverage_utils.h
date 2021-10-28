@@ -105,7 +105,7 @@ namespace bg = boost::geometry;
 namespace bgi = boost::geometry::index;
 
 typedef bg::model::point<double, 2, bg::cs::cartesian> MGPoint;
-typedef bg::model::box<point> MGBox;
+typedef bg::model::box<MGPoint> MGBox;
 typedef std::pair<MGPoint, unsigned> MGValue;
 typedef bgi::rtree<MGValue, bgi::quadratic<16> > MGRTree;
 
@@ -195,10 +195,11 @@ class SkeletalGraph {
 							 bool immediate=false);
 
 		uint32_t getCount();
+		const std::unordered_map<int, SkeletalNode>& getVertexMap() const;
 		Vector2d getVertexById(int id);
 		std::vector<Point_2> getVerticesAsCgalPoints();
-		std::vector<Vector2d> getPathToVertex(Vector2d& inV);
-		double non_uniform_utility(Point_2& p, std::vector<BoundarySegment>& bisectors);
+		Vector2d getNextToVertexFrom(Vector2d& fromV, Vector2d& toV);
+		void assignWeightToVertex(int vid, double w);
 
 	private:
 		MatrixXd graph;
@@ -249,18 +250,22 @@ inline void angular_sort(std::vector<Point_2>& V, Point_2& ref) {
 			});
 }
 
-inline void get_nearest_neighbours(Point_2& q, double r, MGRTree& inTree, 
-								   std::vector<MGValue>& outValues) {
-	MGPoint qpoint(CGAL::to_double(q.x()), CGAL::to_double(q.y()));
+inline void get_nearest_neighbours(Vector2d& q, double r, MGRTree& inTree, 
+								   std::vector<Vector2d>& outValues) {
+	MGPoint qpoint(q(0), q(1));
+	MGBox qbox(MGPoint(q(0) - r, q(1) - r), MGPoint(q(0) + r, q(1) + r));
 
-	MGBox qbox(MGPoint(CGAL::to_double(q.x()) - r, CGAL::to_double(q.y()) - r), 
-			   MGPoint(CGAL::to_double(q.x()) + r, CGAL::to_double(q.y()) + r));
-
-	inTree.query(bgi::within(qbox), 
-				 bgi::satisfies([&] (MGValue const& v) {
+	std::vector<MGValue> neighbours;
+	inTree.query(bgi::within(qbox) && 
+				 bgi::satisfies([&](MGValue const& v) {
 				 	return bg::distance(v.first, qpoint) < r;
 				 }), 
-				 std::back_inserter(outValues));
+				 std::back_inserter(neighbours));
+
+	size_t nNeighbours = neighbours.size();
+	for (size_t i = 0; i < nNeighbours; i++) {
+		outValues.push_back(Vector2d(neighbours[i].first.get<0>(), neighbours[i].first.get<1>()));
+	}
 }
 
 // ---------------------------------------------------------------------------------------------

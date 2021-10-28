@@ -152,9 +152,9 @@ def animate_history(i, ax, lims, hist):
 						p2 = h.opposite.vertex.point
 						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
 
-				# for v in skeleton.vertices:
-				# 	plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
-				# 										   v.time, color='blue', fill=False))
+				for v in skeleton.vertices:
+					plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
+														   v.time, color='blue', fill=False))
 
 				mg_in, mg_b = get_metric_graph(np.array(poly, dtype=float), 
 												[np.array(h, dtype=float) for h in holes])

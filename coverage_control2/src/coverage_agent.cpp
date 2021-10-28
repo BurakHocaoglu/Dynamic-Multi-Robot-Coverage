@@ -439,9 +439,6 @@ void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors,
 	CGAL::intersection(actual_region, current_cvx_voronoi, 
 					   std::back_inserter(intersection_pieces));
 
-	// CGAL::intersection(current_cvx_voronoi, actual_region, 
-	// 				   std::back_inserter(intersection_pieces));
-
 	int n_pieces = intersection_pieces.size();
 
 	if (n_pieces == 0) {
@@ -539,6 +536,20 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 		return;
 	}
 
+	// ----------------------------------------------------------------------------------------------
+	// Metric graph construction
+	MGRTree metric_nn_rtree;
+	std::vector<Point_2> metric_graph_points;
+
+	get_metric_graph(current_work_region, m_params.physical_radius * 4., metric_graph_points);
+
+	size_t i = 0;
+	for (Point_2& mgp : metric_graph_points) {
+		metric_nn_rtree.insert(std::make_pair(MGPoint(CGAL::to_double(mgp.x()), 
+													  CGAL::to_double(mgp.y())), i));
+	}
+	// ----------------------------------------------------------------------------------------------
+
 	SkeletalGraph skeletal_map(current_skeleton->size_of_vertices());
 	std::unordered_map<int, bool> seen_edges;
 
@@ -565,15 +576,20 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 		Point_2 p1 = htr->vertex()->point();
 		Point_2 p2 = htr->opposite()->vertex()->point();
 
-		double u1 = workload_utility(p1, inBisectors) / total_workload;
-		double u2 = workload_utility(p2, inBisectors) / total_workload;
+		double u1 = 0., u2 = 0.;
+		if (!frontierFocus) {
+			u1 = workload_utility(p1, inBisectors) / total_workload;
+			u2 = workload_utility(p2, inBisectors) / total_workload;
+		} else {
+			u1 = CGAL::to_double(htr->vertex()->time());
+			u2 = CGAL::to_double(htr->opposite()->vertex()->time());
+		}
 
 		bool c1 = htr->vertex()->is_contour();
 		bool c2 = htr->opposite()->vertex()->is_contour();
 
-		if (c1 && c2) {
+		if (c1 && c2) 
 			ROS_WARN("%s - Contour halfedge detected. This should not be executed!", name.c_str());
-		}
 
 		skeletal_map.addEdge(vid1, htr->vertex()->point(), u1, c1, 
 							 vid2, htr->opposite()->vertex()->point(), u2, c2);
@@ -583,93 +599,51 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 	}
 
 	if (frontierFocus) {
-		MGRTree metric_nn_rtree;
-		std::vector<Point_2> metric_graph_points;
-
-		get_metric_graph(current_work_region, m_params.physical_radius * 4., metric_graph_points);
-
-		size_t i = 0;
-		for (Point_2& mgp : metric_graph_points) {
-			metric_nn_rtree.insert(std::make_pair(MGPoint(CGAL::to_double(mgp.x()), 
-														  CGAL::to_double(mgp.y())), i));
-		}
-
 		std::vector<UtilityPair> super_nodes;
 
-		// auto htr = current_skeleton->halfedges_begin();
-		// for (; htr != current_skeleton->halfedges_end(); htr++) {
-		// 	auto shtr = seen_edges.find(htr->id());
-		// 	if (shtr != seen_edges.end()) 
-		// 		continue;
+		// auto vtr = current_skeleton->vertices_begin();
+		// std::unordered_map<int, SkeletalNode> vertices = skeletal_map.getVertexMap();
+		// for (; vtr != current_skeleton->vertices_end(); vtr++) {
+		for (auto& entry : skeletal_map.getVertexMap()) {
+			// if (vtr->is_contour())
+			// 	continue;
 
-		// 	if (!htr->is_bisector()) 
-		// 		continue;
+			if (entry.second.contour)
+				continue;
 
-		// 	int vid1 = htr->vertex()->id();
-		// 	int vid2 = htr->opposite()->vertex()->id();
+			// Point_2 p = vtr->point();
+			// Vector2d node(CGAL::to_double(p.x()), CGAL::to_double(p.y()));
+			Vector2d node = entry.second.point;
+			std::vector<Vector2d> local_mg_points;
 
-		// 	Point_2 p1 = htr->vertex()->point();
-		// 	Point_2 p2 = htr->opposite()->vertex()->point();
+			// get_nearest_neighbours(p, vtr->time(), metric_nn_rtree, local_mg_points);
+			get_nearest_neighbours(node, entry.second.weight, metric_nn_rtree, local_mg_points);
 
-		// 	double u1 = workload_utility(p1, inBisectors) / total_workload;
-		// 	double u2 = workload_utility(p2, inBisectors) / total_workload;
+			super_nodes.emplace_back(calculate_non_uniform_utility(node, local_mg_points, 
+																   inBisectors), node);
 
-		// 	bool c1 = htr->vertex()->is_contour();
-		// 	bool c2 = htr->opposite()->vertex()->is_contour();
+			// super_nodes.emplace_back(calculate_non_uniform_utility(node, local_mg_points, inBisectors) * 
+			// 								entry.second.weight, node);
+		}
 
-		// 	std::vector<MGValue> local_mg_points;
-
-		// 	if (c1 && c2) {
-		// 		ROS_WARN("%s - Contour halfedge detected. This should not be executed!", name.c_str());
-		// 	} else if (!c1) {
-		// 		get_nearest_neighbours(p1, htr->vertex()->time(), metric_nn_rtree, local_mg_points);
-		// 	} else if (!c2) {
-		// 		get_nearest_neighbours(p2, htr->opposite()->vertex()->time(), 
-		// 							   metric_nn_rtree, local_mg_points);
-		// 	} else {
-		// 		ROS_WARN("%s - WTF!?", name.c_str());
+		// if (id == 1) {
+		// 	for (int i = 0; i < super_nodes.size(); i++) {
+		// 		std::cout << "V: (" << super_nodes[i].second(0) << ", " << super_nodes[i].second(1) 
+		// 				  << ") - U: " << super_nodes[i].first << std::endl;
 		// 	}
-
-		// 	skeletal_map.addEdge(vid1, htr->vertex()->point(), u1, c1, 
-		// 						 vid2, htr->opposite()->vertex()->point(), u2, c2);
-
-		// 	seen_edges[htr->id()] = true;
-		// 	seen_edges[htr->opposite()->id()] = true;
 		// }
 
+		std::vector<UtilityPair>::iterator t_itr = std::max_element(super_nodes.begin(), super_nodes.end(), 
+																	[&](UtilityPair p1, UtilityPair p2){
+																		return p1.first < p2.first;
+																	});
+
+		target = t_itr->second;
+		current_workload = calculate_workload();
+		largest_workload = t_itr->first;
+
+		goal = skeletal_map.getNextToVertexFrom(position, target);
 	} else {
-		// auto htr = current_skeleton->halfedges_begin();
-		// for (; htr != current_skeleton->halfedges_end(); htr++) {
-		// 	auto shtr = seen_edges.find(htr->id());
-		// 	if (shtr != seen_edges.end()) 
-		// 		continue;
-
-		// 	if (!htr->is_bisector()) 
-		// 		continue;
-
-		// 	int vid1 = htr->vertex()->id();
-		// 	int vid2 = htr->opposite()->vertex()->id();
-
-		// 	Point_2 p1 = htr->vertex()->point();
-		// 	Point_2 p2 = htr->opposite()->vertex()->point();
-
-		// 	double u1 = workload_utility(p1, inBisectors) / total_workload;
-		// 	double u2 = workload_utility(p2, inBisectors) / total_workload;
-
-		// 	bool c1 = htr->vertex()->is_contour();
-		// 	bool c2 = htr->opposite()->vertex()->is_contour();
-
-		// 	if (c1 && c2) {
-		// 		ROS_WARN("%s - Contour halfedge detected. This should not be executed!", name.c_str());
-		// 	}
-
-		// 	skeletal_map.addEdge(vid1, htr->vertex()->point(), u1, c1, 
-		// 						 vid2, htr->opposite()->vertex()->point(), u2, c2);
-
-		// 	seen_edges[htr->id()] = true;
-		// 	seen_edges[htr->opposite()->id()] = true;
-		// }
-
 		skeletal_map.refineEdges();
 
 		std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
@@ -734,6 +708,27 @@ double Agent::workload_utility(Point_2& p, std::vector<BoundarySegment>& bisecto
 	}
 
 	return utility;
+}
+
+double Agent::calculate_non_uniform_utility(Vector2d& major, std::vector<Vector2d>& minor, 
+											std::vector<BoundarySegment>& bisectors) {
+	double total_importance = 0.;
+	size_t nMinors = minor.size();
+	std::vector<BoundarySegment>::iterator b_itr;
+
+	for (size_t i = 0; i < nMinors; i++) {
+		double minor_importance = 0.;
+
+		b_itr = bisectors.begin();
+		for (; b_itr != bisectors.end(); b_itr++) {
+			double d_b = (minor[i] - b_itr->middle).dot(b_itr->normal) / b_itr->normal.norm();
+			minor_importance += (current_workload - neighbours[b_itr->mirror_id].workload) / d_b;
+		}
+
+		total_importance += minor_importance;
+	}
+
+	return total_importance;
 }
 
 void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 

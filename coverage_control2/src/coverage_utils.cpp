@@ -112,10 +112,8 @@ Vector2d SkeletalGraph::getLargestNode(std::vector<std::pair<double, size_t> >& 
 // ---------------------------------------------------------------------------------------------
 // Copied from (and modified slightly, for Eigen::Matrix and extra functionality) 
 // https://github.com/vsmolyakov/cpp/blob/master/graphs/apsp_floyd_warshall.cpp
-// Vector2d SkeletalGraph::getCentroid(bool immediate=false) {
 Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
 									bool immediate) {
-
 	for (int i = 0; i < count; i++) {
 		for (int j = 0; j < count; j++) {
 			if (i == j)
@@ -156,7 +154,6 @@ Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& out
 		return vertex_map[min_idx].point;
 	}
 
-	// std::vector<std::pair<double, size_t> > outStats(count);
 	for (size_t i = 0; i < count; i++) {
 		outStats[i] = std::make_pair(dists(i), i);
 	}
@@ -165,20 +162,6 @@ Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& out
 												   std::pair<double, size_t> b) {
 		return a < b;
 	});
-
-	// bool found = false;
-	// size_t k = 0;
-	// for (; k < count; k++) {
-	// 	if (!vertex_map[outStats[k].second].contour) {
-	// 		found = true;
-	// 		break;
-	// 	}
-	// }
-
-	// k = (found) ? k : 0;
-
-	// return vertex_map[outStats[0].second].point;
-	// return vertex_map[outStats[k].second].point;
 
 	double pair_total = outStats[0].first + outStats[1].first;
 	// double triple_total = outStats[0].first + outStats[1].first + outStats[2].first;
@@ -194,6 +177,10 @@ Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& out
 
 uint32_t SkeletalGraph::getCount() {
 	return count;
+}
+
+const std::unordered_map<int, SkeletalNode>& SkeletalGraph::getVertexMap() const {
+	return vertex_map;
 }
 
 Vector2d SkeletalGraph::getVertexById(int id) {
@@ -213,18 +200,53 @@ std::vector<Point_2> SkeletalGraph::getVerticesAsCgalPoints() {
 	return vertices;
 }
 
-std::vector<Vector2d> SkeletalGraph::getPathToVertex(Vector2d& inV) {
-	std::vector<Vector2d> path;
+Vector2d SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vector2d& toV) {
+	// int i = 0;
+	bool found = false;
 
-	for (int i = 0; i < count; i++) {
-		double d = 
-		if ()
+	// for (; i < count; i++) {
+	// 	if ((vertex_map[id_map[i]].point - toV).norm() < 0.1) {
+	// 		found = true;
+	// 		break;
+	// 	}
+	// }
+
+	std::unordered_map<int, SkeletalNode>::iterator v_itr = vertex_map.begin();
+	for (; v_itr != vertex_map.end(); v_itr++) {
+		if ((v_itr->second.point - toV).norm() < 0.1) {
+			found = true;
+			break;
+		}
 	}
-	return std::vector<Vector2d>(1);
+
+	if (!found) {
+		std::cout << "*** REQUESTED FOR UNKNOWN VERTEX!!! Returning the current position...\n";
+		return fromV;
+	}
+
+	// ...
+
+	// int vid = id_map[i];
+	// int j = paths(i);
+	// std::vector<UtilityPair> distances;
+
+	// while (j != i) {
+	// 	distances.emplace_back((vertex_map[j].point - fromV).norm(), vertex_map[j].point);
+	// 	j = paths(j);
+	// }
+
+	// std::vector<UtilityPair>::iterator g_itr = std::min_element(distances.begin(), distances.end(), 
+	// 															[&](UtilityPair p1, UtilityPair p2){
+	// 																return p1.first < p2.first;
+	// 															});
+
+	// return g_itr->second;
+
+	return toV;
 }
 
-double SkeletalGraph::non_uniform_utility(Point_2& p, std::vector<BoundarySegment>& bisectors) {
-	return 0.;
+void SkeletalGraph::assignWeightToVertex(int vid, double w) {
+	vertex_map[vid].weight = w;
 }
 
 // ------------------------------------------------------------------------------------------

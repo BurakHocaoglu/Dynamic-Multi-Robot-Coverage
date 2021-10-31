@@ -34,7 +34,7 @@ class Agent {
 		void build_local_skeleton(std::vector<BoundarySegment>& bisectors, bool frontierFocus=false);
 		void compute_geometric_centroid();
 		double workload_utility(Point_2& p, std::vector<BoundarySegment>& bisectors);
-		double calculate_non_uniform_utility(Vector2d& major, std::vector<Vector2d>& minor, 
+		double calculate_non_uniform_utility(Vector2d& major, double r, std::vector<Vector2d>& minor, 
 											 std::vector<BoundarySegment>& bisectors);
 
 		void get_voronoi_cell_raw(std::vector<BoundarySegment>& segments, 

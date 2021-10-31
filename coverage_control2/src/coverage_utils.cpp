@@ -201,7 +201,7 @@ std::vector<Point_2> SkeletalGraph::getVerticesAsCgalPoints() {
 	return vertices;
 }
 
-Vector2d SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vector2d& toV) {
+std::vector<UtilityPair> SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vector2d& toV) {
 	bool found = false;
 	std::unordered_map<int, SkeletalNode>::iterator v_itr = vertex_map.begin();
 	for (; v_itr != vertex_map.end(); v_itr++) {
@@ -219,27 +219,50 @@ Vector2d SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vector2d& toV) {
 	std::priority_queue<std::pair<double, int> > search_frontier;
 	std::unordered_map<int, bool> visited;
 
-	// id_map  -- KEY: skeleton id - VAL: graph id
-	// rid_map -- KEY: graph id    - VAL: skeleton id
+	search_frontier.push(std::make_pair(0., id_map[v_itr->second.id]));
+	search_frontier.push(std::make_pair((v_itr->second.point - fromV).norm(), id_map[v_itr->second.id]));
 
-	// search_frontier.push(std::make_pair((v_itr->second.point - fromV).norm(), id_map[v_itr->second.id]));
+	double min_dist = (v_itr->second.point - fromV).norm();
+	int min_node_id = id_map[v_itr->second.id];
 
-	// while (!search_frontier.empty()) {
-	// 	std::pair<double, int> next = search_frontier.top();
-	// 	search_frontier.pop();
+	while (!search_frontier.empty()) {
+		std::pair<double, int> next = search_frontier.top();
+		search_frontier.pop();
 
-	// 	int gid = rid_map[next.second];
-	// 	for (int j = 0; j < count; j++) {
-	// 		if (gid == j)
-	// 			continue;
+		if (visited[next.second])
+			continue;
 
-	// 		if (graph(gid, j) > 0) {
-	// 			search_frontier.push(std::make_pair((), rid_map[]));
-	// 		}
-	// 	}
+		for (int j = 0; j < count; j++) {
+			if (next.second == j)
+				continue;
+
+			if (graph(next.second, j) > 0) {
+				double cost = graph(next.second, j) + (vertex_map[rid_map[j]].point - fromV).norm();
+				search_frontier.push(std::make_pair(cost, j));
+			}
+		}
+
+		visited[next.second] = true;
+	}
+
+	// std::vector<UtilityPair> distances;
+
+	// std::unordered_map<int, SkeletalNode>::iterator v_itr = vertex_map.begin();
+	// for (; v_itr != vertex_map.end(); v_itr++) {
+	// 	if (v_itr->second.contour)
+	// 		continue;
+
+	// 	double value = (v_itr->second.point - toV).norm() * (v_itr->second.point - fromV).norm();
+	// 	distances.push_back(std::make_pair(value, v_itr->second.point));
 	// }
 
-	return toV;
+	// std::sort(distances.begin(), distances.end(), 
+	// 			[&](UtilityPair p1, UtilityPair p2){
+	// 				return p1.first < p2.first;
+	// 			});
+
+	// return toV;
+	return distances;
 }
 
 void SkeletalGraph::assignWeightToVertex(int vid, double w) {

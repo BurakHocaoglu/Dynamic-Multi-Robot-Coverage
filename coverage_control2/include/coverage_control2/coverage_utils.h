@@ -198,7 +198,7 @@ class SkeletalGraph {
 		const std::unordered_map<int, SkeletalNode>& getVertexMap() const;
 		Vector2d getVertexById(int id);
 		std::vector<Point_2> getVerticesAsCgalPoints();
-		Vector2d getNextToVertexFrom(Vector2d& fromV, Vector2d& toV);
+		std::vector<UtilityPair> getNextToVertexFrom(Vector2d& fromV, Vector2d& toV);
 		void assignWeightToVertex(int vid, double w);
 
 	private:

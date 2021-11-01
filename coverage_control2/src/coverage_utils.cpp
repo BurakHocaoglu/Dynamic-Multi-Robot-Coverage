@@ -115,23 +115,23 @@ Vector2d SkeletalGraph::getLargestNode(std::vector<std::pair<double, size_t> >& 
 // https://github.com/vsmolyakov/cpp/blob/master/graphs/apsp_floyd_warshall.cpp
 Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
 									bool immediate) {
-	for (int i = 0; i < count; i++) {
-		for (int j = 0; j < count; j++) {
-			if (i == j)
-				paths(i, j) = 0.;
-			else if (graph(i, j) != std::numeric_limits<int>::max())
-				paths(i, j) = i;
-			else
-				paths(i, j) = -1;
-		}
-	}
+	// for (int i = 0; i < count; i++) {
+	// 	for (int j = 0; j < count; j++) {
+	// 		if (i == j)
+	// 			paths(i, j) = 0.;
+	// 		else if (graph(i, j) != std::numeric_limits<int>::max())
+	// 			paths(i, j) = i;
+	// 		else
+	// 			paths(i, j) = -1;
+	// 	}
+	// }
 
 	for (int k = 0; k < count; k++) {
 		for (int i = 0; i < count; i++) {
 			for (int j = 0; j < count; j++) {
 				if (graph(i, k) + graph(k, j) < graph(i, j)) {
 					graph(i, j) = graph(i, k) + graph(k, j);
-					paths(i, j) = paths(k, j);
+					// paths(i, j) = paths(k, j);
 				}
 			}
 
@@ -202,64 +202,64 @@ std::vector<Point_2> SkeletalGraph::getVerticesAsCgalPoints() {
 }
 
 std::vector<UtilityPair> SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vector2d& toV) {
-	bool found = false;
-	std::unordered_map<int, SkeletalNode>::iterator v_itr = vertex_map.begin();
-	for (; v_itr != vertex_map.end(); v_itr++) {
-		if ((v_itr->second.point - toV).norm() < 0.1) {
-			found = true;
-			break;
-		}
-	}
-
-	if (!found) {
-		std::cout << "*** REQUESTED FOR UNKNOWN VERTEX!!! Returning the current position...\n";
-		return fromV;
-	}
-
-	std::priority_queue<std::pair<double, int> > search_frontier;
-	std::unordered_map<int, bool> visited;
-
-	search_frontier.push(std::make_pair(0., id_map[v_itr->second.id]));
-	search_frontier.push(std::make_pair((v_itr->second.point - fromV).norm(), id_map[v_itr->second.id]));
-
-	double min_dist = (v_itr->second.point - fromV).norm();
-	int min_node_id = id_map[v_itr->second.id];
-
-	while (!search_frontier.empty()) {
-		std::pair<double, int> next = search_frontier.top();
-		search_frontier.pop();
-
-		if (visited[next.second])
-			continue;
-
-		for (int j = 0; j < count; j++) {
-			if (next.second == j)
-				continue;
-
-			if (graph(next.second, j) > 0) {
-				double cost = graph(next.second, j) + (vertex_map[rid_map[j]].point - fromV).norm();
-				search_frontier.push(std::make_pair(cost, j));
-			}
-		}
-
-		visited[next.second] = true;
-	}
-
-	// std::vector<UtilityPair> distances;
-
+	// bool found = false;
 	// std::unordered_map<int, SkeletalNode>::iterator v_itr = vertex_map.begin();
 	// for (; v_itr != vertex_map.end(); v_itr++) {
-	// 	if (v_itr->second.contour)
-	// 		continue;
-
-	// 	double value = (v_itr->second.point - toV).norm() * (v_itr->second.point - fromV).norm();
-	// 	distances.push_back(std::make_pair(value, v_itr->second.point));
+	// 	if ((v_itr->second.point - toV).norm() < 0.1) {
+	// 		found = true;
+	// 		break;
+	// 	}
 	// }
 
-	// std::sort(distances.begin(), distances.end(), 
-	// 			[&](UtilityPair p1, UtilityPair p2){
-	// 				return p1.first < p2.first;
-	// 			});
+	// if (!found) {
+	// 	std::cout << "*** REQUESTED FOR UNKNOWN VERTEX!!! Returning the current position...\n";
+	// 	return fromV;
+	// }
+
+	// std::priority_queue<std::pair<double, int> > search_frontier;
+	// std::unordered_map<int, bool> visited;
+
+	// search_frontier.push(std::make_pair(0., id_map[v_itr->second.id]));
+	// // search_frontier.push(std::make_pair((v_itr->second.point - fromV).norm(), id_map[v_itr->second.id]));
+
+	// double min_dist = (v_itr->second.point - fromV).norm();
+	// int min_node_id = id_map[v_itr->second.id];
+
+	// while (!search_frontier.empty()) {
+	// 	std::pair<double, int> next = search_frontier.top();
+	// 	search_frontier.pop();
+
+	// 	if (visited[next.second])
+	// 		continue;
+
+	// 	for (int j = 0; j < count; j++) {
+	// 		if (next.second == j)
+	// 			continue;
+
+	// 		if (graph(next.second, j) > 0) {
+	// 			double cost = graph(next.second, j) + (vertex_map[rid_map[j]].point - fromV).norm();
+	// 			search_frontier.push(std::make_pair(cost, j));
+	// 		}
+	// 	}
+
+	// 	visited[next.second] = true;
+	// }
+
+	std::vector<UtilityPair> distances;
+
+	std::unordered_map<int, SkeletalNode>::iterator v_itr = vertex_map.begin();
+	for (; v_itr != vertex_map.end(); v_itr++) {
+		if (v_itr->second.contour)
+			continue;
+
+		double value = (v_itr->second.point - toV).norm() * (v_itr->second.point - fromV).norm();
+		distances.push_back(std::make_pair(value, v_itr->second.point));
+	}
+
+	std::sort(distances.begin(), distances.end(), 
+				[&](UtilityPair p1, UtilityPair p2){
+					return p1.first < p2.first;
+				});
 
 	// return toV;
 	return distances;

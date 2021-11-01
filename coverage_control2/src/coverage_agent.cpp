@@ -72,6 +72,12 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 	inflated_outer_boundary_bbox.push_back(Point_2(ob_box.xmax() + 1., ob_box.ymax() + 1.));
 	inflated_outer_boundary_bbox.push_back(Point_2(ob_box.xmin() - 1., ob_box.ymax() + 1.));
 
+	int rbnd_real_v_count = region_boundary.size();
+	for (int i = 0; i < rbnd_real_v_count; i++) {
+		int j = (i + 1) % rbnd_real_v_count;
+		real_vis_segments.emplace_back(region_boundary[i], region_boundary[j]);
+	}
+
 	int rbnd_v_count = region_boundary_bbox.size();
 	for (int i = 0; i < rbnd_v_count; i++) {
 		int j = (i + 1) % rbnd_v_count;
@@ -102,6 +108,7 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 
 			// BoundarySegment seg = {normal, middle * 0.5};
 			// segments_to_avoid.push_back(seg);
+			real_vis_segments.emplace_back(region_holes[i][j], region_holes[i][k]);
 			vis_segments.emplace_back(region_holes[i][j], region_holes[i][k]);
 		}
 
@@ -273,6 +280,7 @@ void Agent::step() {
 	get_voronoi_cell_raw(neighbour_segments, agents_to_consider, A, b, relevantBisectors);
 
 	visibility_limited_voronoi(relevantBisectors, theFrontier);
+	bool frontier_focused = false;
 
 	if (b_settings.centroid_alg == CentroidAlgorithm::UNKNOWN) {
 		b_settings.stationary = true;
@@ -285,7 +293,8 @@ void Agent::step() {
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::GEODESIC_EXACT) {
 			ROS_WARN("%s - does not have a valid exact geodesic centroid algorithm!", name.c_str());
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::FRONTIER_FOCUSED) {
-			build_local_skeleton(relevantBisectors, true);
+			frontier_focused = true;
+			build_local_skeleton(relevantBisectors, frontier_focused);
 		}
 	}
 
@@ -296,38 +305,51 @@ void Agent::step() {
 		ROS_WARN("%s - would move towards an invalid goal!", name.c_str());
 	}
 
+	// if (frontier_focused) {
+	// 	Vector2d mean_goal(0., 0.);
+	// 	mean_goal = std::accumulate(goal_history.begin(), goal_history.end(), mean_goal);
+
+	// 	if (id == 1)
+	// 		std::cout << "Mean goal: (" << mean_goal(0) << ", " << mean_goal(1) << ")\n";
+
+	// 	total_force += m_params.K_goal * (mean_goal / ((double)goal_history.size()) - position);
+	// } else 
+	// 	total_force += m_params.K_goal * (goal - position);
+
 	total_force += m_params.K_goal * (goal - position);
 
 	double mag = total_force.norm();
-	double ang_diff = wrapToPi(atan2(total_force[1], total_force[0]) - heading);
-	double u = m_params.K_linear * mag * cos(ang_diff);
-	double w = m_params.K_angular * mag * sin(ang_diff);
+	// double ang_diff = wrapToPi(atan2(total_force[1], total_force[0]) - heading);
+	// double u = m_params.K_linear * mag * cos(ang_diff);
+	// double w = m_params.K_angular * mag * sin(ang_diff);
 
-	if (fabs(w) > m_params.wmax) 
-		w = copysign(m_params.wmax, w);
+	// if (fabs(w) > m_params.wmax) 
+	// 	w = copysign(m_params.wmax, w);
 
-	// double u = mag;
+	double u = mag;
 
 	clip_inplace(u, 0., m_params.umax);
 
 	Vector2d hdgVector(cos(heading), sin(heading));
 	velocity = u * hdgVector;
-	// velocity = u * total_force / mag;
+	velocity = u * total_force / mag;
 
-	// position += velocity * m_params.delta_t;
+	position += velocity * m_params.delta_t;
 	// heading = wrapToPi(heading + w * m_params.delta_t);
-	// heading = atan2(velocity(1), velocity(0));
+	heading = atan2(velocity(1), velocity(0));
 
-	if (std::fabs(ang_diff) <= m_params.wmax)
-		position += velocity * 0.1;
+	// if (std::fabs(ang_diff) <= m_params.wmax)
+	// 	position += velocity * 0.1;
 
-	heading = wrapToPi(heading + w * 0.1);
+	// heading = wrapToPi(heading + w * 0.1);
 }
 
 void Agent::visibility_polygon() {
 	Polygon_2 new_visibility_poly;
 	Arrangement_2 local_env_context, current_visibility;
-	CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
+	// CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
+	CGAL::insert_non_intersecting_curves(local_env_context, real_vis_segments.begin(), 
+															real_vis_segments.end());
 
 	Point_2 query(position(0), position(1));
 	CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
@@ -415,7 +437,7 @@ void Agent::visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors,
 		Point_2 position_cgal(position(0), position(1));
 
 		if (n_pieces > 1) {
-			ROS_WARN("%s has multiple visibility and convex voronoi intersection!", name.c_str());
+			// ROS_WARN("%s has multiple visibility and convex voronoi intersection!", name.c_str());
 
 			std::list<Polygon_with_holes_2>::iterator pwh_itr = intersection_pieces.begin();
 			for (; pwh_itr != intersection_pieces.end(); pwh_itr++) {
@@ -562,13 +584,21 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 
 			get_nearest_neighbours(node, entry.second.weight, metric_nn_rtree, local_mg_points);
 
-			// super_nodes.emplace_back(calculate_non_uniform_utility(node, local_mg_points, 
+			// if (id == 1) {
+			// 	std::cout << "SN: (" << node(0) << ", " << node(1) << ":\n";
+			// 	for (int i = 0; i < local_mg_points.size(); i++) {
+			// 		std::cout << "M: (" << local_mg_points[i](0) << ", " 
+			// 							<< local_mg_points[i](1) << std::endl;
+			// 	}
+			// 	std::cout << std::endl;
+			// }
+
+			// super_nodes.emplace_back(calculate_non_uniform_utility(node, entry.second.weight, 
+			// 													   local_mg_points, 
 			// 													   inBisectors), node);
 			super_nodes.emplace_back(calculate_non_uniform_utility(node, entry.second.weight, 
-																   local_mg_points, 
-																   inBisectors), node);
-			// super_nodes.emplace_back(calculate_non_uniform_utility(node, local_mg_points, inBisectors) * 
-			// 								entry.second.weight, node);
+																   local_mg_points, inBisectors) * 
+																	entry.second.weight, node);
 		}
 
 		// if (id == 1) {
@@ -614,14 +644,18 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 			goal = position;
 		} else {
 			goal = g_itr->second;
+			if (goal_history.size() == 5)
+				goal_history.pop_front();
 
-			if (id == 1) {
-				ROS_INFO("%s - GV: (%.3f, %.3f)", name.c_str(), goal(0), goal(1));
-			}
+			goal_history.push_back(goal);
+
+			// if (id == 1) {
+			// 	ROS_INFO("%s - GV: (%.3f, %.3f)", name.c_str(), goal(0), goal(1));
+			// }
 		}
 
 	} else {
-		skeletal_map.refineEdges();
+		// skeletal_map.refineEdges();
 
 		std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
 		target = skeletal_map.getCentroid(stats);
@@ -667,6 +701,8 @@ void Agent::compute_geometric_centroid() {
 
 	cx /= 6.0 * area;
 	cy /= 6.0 * area;
+
+	current_workload = calculate_workload();
 
 	goal = Vector2d(cx, cy);
 }

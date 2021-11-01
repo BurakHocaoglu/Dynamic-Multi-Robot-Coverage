@@ -21,6 +21,6 @@
 
 	<!-- <node name="A3" pkg="coverage_control2" type="dist_coverage_node" args="3" launch-prefix="$(arg prefix)" output="screen" /> -->
 
-	<!-- <node name="A5" pkg="coverage_control2" type="dist_coverage_node" args="5" launch-prefix="$(arg prefix)" output="screen" /> -->
+	<!-- <node name="A4" pkg="coverage_control2" type="dist_coverage_node" args="4" launch-prefix="$(arg prefix)" output="screen" /> -->
 
 </launch>

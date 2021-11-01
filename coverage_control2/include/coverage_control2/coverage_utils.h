@@ -29,6 +29,7 @@
 #include <typeinfo>
 #include <list>
 #include <vector>
+#include <deque>
 #include <limits>
 #include <random>
 #include <utility>
@@ -114,7 +115,8 @@ enum CentroidAlgorithm {
 	GEOMETRIC=1,
 	GEODESIC_APPROXIMATE=2,
 	GEODESIC_EXACT=3,
-	FRONTIER_FOCUSED=4
+	FRONTIER_FOCUSED=4,
+	GRID_BASED=5
 };
 
 struct MotionParameters {
@@ -323,6 +325,9 @@ inline CentroidAlgorithm getAlgFromString(const std::string& s) {
 
 	else if (s.compare("frontier_focused") == 0) 
 		return CentroidAlgorithm::FRONTIER_FOCUSED;
+
+	else if (s.compare("grid_based") == 0) 
+		return CentroidAlgorithm::GRID_BASED;
 
 	else 
 		return CentroidAlgorithm::UNKNOWN;

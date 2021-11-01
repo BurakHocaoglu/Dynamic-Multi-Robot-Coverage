@@ -71,6 +71,7 @@ class Agent {
 		Vector2d position;
 		Vector2d velocity;
 		Vector2d goal;
+		std::deque<Vector2d> goal_history;
 		Vector2d target;
 		double heading;
 		double current_workload;
@@ -96,6 +97,7 @@ class Agent {
 
 		std::vector<BoundarySegment> segments_to_avoid;
 		std::vector<Segment_2> vis_segments;
+		std::vector<Segment_2> real_vis_segments;
 		Polygon_2 current_cvx_voronoi;
 		Polygon_2 current_visibility_poly;
 

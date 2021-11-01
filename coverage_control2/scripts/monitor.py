@@ -201,6 +201,11 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 			if vlvpoly is not None:
 				ax.add_patch(vlvpoly)
 
+		elif globals()["visibility_focus_level"] == 3:
+			vpoly = globals()["all_vpolygons"].get(aid)
+			if vpoly is not None:
+				ax.add_patch(vpoly)
+
 def customSigIntHandler(signum, frame):
 	for aid, vlv_history in globals()["all_vlv_history"].items():
 		with open("Agent{}_VLV.json".format(aid), "w") as H:

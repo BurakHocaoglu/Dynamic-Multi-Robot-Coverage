@@ -22,7 +22,4 @@ if __name__ == '__main__':
 
 	rospy.spin()
 
-	# print_grid_to_png(monitor.grid_image, 
-	# 				  '/home/burak/thesis_ws/coverage_map_{}.png'.format(time.time()))
-
 	monitor.save_grid_image()

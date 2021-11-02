@@ -102,7 +102,7 @@ def dist_func_poly(p):
 	return min(dists) ** 2
 
 # dist_func = dist_func_poly
-dist_func = lambda p: 4. - np.linalg.norm(p)
+dist_func = lambda p: (4. - np.linalg.norm(p)) ** 2
 
 fig = plt.figure()
 ax = fig.gca(projection='3d')
@@ -117,9 +117,25 @@ Z = list(map(np.array, zip(XX.flatten(), YY.flatten())))
 sigma = 2
 dists_sq = np.array(list(map(dist_func, Z))).reshape(100, 100)
 
+value_func = lambda a: np.e ** (- a / (2 * sigma ** 2))
 distribution = np.e ** (- dists_sq / (2 * sigma ** 2))
 
-surf = ax.plot_surface(XX, YY, distribution, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+poses = []
+for i in range(10):
+	pose = np.random.uniform([-10., -10.], [10., 10.], size=(2,))
+	point = list(pose) + [value_func(dist_func(pose))]
+	poses.append(point)
+
+poses = np.array(poses, dtype=float)
+print(poses.shape)
+poses = poses.T
+print(poses.shape)
+
+# ax.scatter([pos[0]], [pos[1]], [pos[2]], color=(0., 0.99, 0.))
+ax.scatter(poses[0, :], poses[1, :], poses[2, :], color=(0., 0.99, 0.))
+
+# surf = ax.plot_surface(XX, YY, distribution, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+surf = ax.plot_surface(XX, YY, distribution, cmap=cm.coolwarm, alpha=0.7, linewidth=0, antialiased=True)
 
 # ax.set_zlim(-2.01, 4.01)
 ax.set_zlim(np.amin(distribution) - 1., np.amax(distribution) + 1.)

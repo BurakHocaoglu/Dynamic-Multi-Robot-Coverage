@@ -18,6 +18,7 @@
 #include <coverage_control2/AgentState.h>
 #include <coverage_control2/SetInitialPose.h>
 #include <coverage_control2/UtilityDebug.h>
+#include <coverage_control2/GetMetricPartition.h>
 
 #include <iostream>
 #include <cstdio>
@@ -34,6 +35,7 @@
 #include <random>
 #include <utility>
 #include <algorithm>
+#include <set>
 #include <unordered_map>
 #include <functional>
 
@@ -101,6 +103,7 @@ typedef std::pair<double, Vector2d> UtilityPair;
 
 typedef coverage_control2::AgentState AgentStateMsg;
 typedef coverage_control2::SetInitialPose SetInitialPose;
+typedef coverage_control2::GetMetricPartition GetMetricPartition;
 
 namespace bg = boost::geometry;
 namespace bgi = boost::geometry::index;
@@ -179,8 +182,43 @@ struct SkeletalNode {
 	double weight;
 };
 
+// ---------------------------------------------------------------------------------------------
+// Copied from 
+// https://wjngkoh.wordpress.com/2015/03/04/c-hash-function-for-eigen-matrix-and-vector/
+template<typename T>
+struct Vector2dHash : std::unary_function<T, size_t> {
+	std::size_t operator()(T const& matrix) const {
+		// Note that it is oblivious to the storage order of Eigen matrix (column- or
+		// row-major). It will give you the same hash value for two different matrices if they
+		// are the transpose of each other in different storage order.
+		size_t seed = 0;
+
+		for (size_t i = 0; i < matrix.size(); ++i) {
+			auto elem = *(matrix.data() + i);
+			seed ^= std::hash<typename T::Scalar>()(elem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		}
+
+		return seed;
+	}
+};
+// ---------------------------------------------------------------------------------------------
+
+struct Vector2dComp {
+	bool operator() (const Vector2d& lhs, const Vector2d& rhs) const {
+		if (lhs(0) != rhs(0))
+			return lhs(0) < rhs(0);
+		else {
+			return lhs(1) < rhs(1);
+		}
+	}
+};
+
 void get_metric_graph(Polygon_with_holes_2& polygon, double resolution, 
 					  std::vector<Point_2>& outPoints);
+
+double a_star_search(Point_2& start, Point_2& goal, double step_size, 
+					 Polygon_with_holes_2& environment, bool prune, bool debug=false, 
+					 bool with_path=false, std::vector<Vector2d>* outPathR=nullptr);
 
 class SkeletalGraph {
 	public:

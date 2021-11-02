@@ -22,6 +22,7 @@ Agent::Agent(ros::NodeHandle& nh_, const std::string& name_, uint8_t id_) :
 	initPose_service = nh.advertiseService("/" + name + "/set_initial_pose", &Agent::handle_SetInitialPose, this);
 	ready_service = nh.advertiseService("/" + name + "/set_ready", &Agent::handle_SetReady, this);
 	dump_skeleton_service = nh.advertiseService("/" + name + "/dump_skeleton", &Agent::handle_DumpSkeleton, this);
+	metric_partition_service = nh.advertiseService("/" + name + "/metric_partition", &Agent::handle_MetricPartition, this);
 }
 
 Agent::~Agent() { }
@@ -53,7 +54,8 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 	region_boundary = c_bounds;
 	region_holes = c_holes;
 
-	create_offset_poly_naive(region_boundary, -m_params.physical_radius, inflated_outer_boundary);
+	// create_offset_poly_naive(region_boundary, -m_params.physical_radius, inflated_outer_boundary);
+	create_offset_poly_naive(region_boundary, -m_params.physical_radius / 2., inflated_outer_boundary);
 
 	if (inflated_outer_boundary.is_clockwise_oriented()) 
 		inflated_outer_boundary.reverse_orientation();
@@ -113,7 +115,8 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 		}
 
 		Polygon_2 inflated_region_hole_i;
-		create_offset_poly_naive(region_holes[i], -m_params.physical_radius, inflated_region_hole_i);
+		// create_offset_poly_naive(region_holes[i], -m_params.physical_radius, inflated_region_hole_i);
+		create_offset_poly_naive(region_holes[i], -m_params.physical_radius / 2., inflated_region_hole_i);
 		inflated_region_holes.push_back(inflated_region_hole_i);
 	}
 
@@ -125,6 +128,14 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 	actual_region = Polygon_with_holes_2(inflated_outer_boundary, 
 										 inflated_region_holes.begin(), 
 										 inflated_region_holes.end());
+
+	Bbox_2 bbox = actual_region.outer_boundary().bbox();
+	std::cout << name << " - BBox: (" << bbox.xmin() << ", " << bbox.ymin() << ") - (" 
+									  << bbox.xmax() << ", " << bbox.ymax() << ")\n";
+
+	ROS_INFO("%s - constructing global metric grid...", name.c_str());
+	get_metric_graph(actual_region, m_params.physical_radius * 4., global_metric_grid);
+	ROS_INFO("%s - constructed global metric grid (%d points)", name.c_str(), (int)global_metric_grid.size());
 }
 
 bool Agent::ready() {
@@ -295,6 +306,13 @@ void Agent::step() {
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::FRONTIER_FOCUSED) {
 			frontier_focused = true;
 			build_local_skeleton(relevantBisectors, frontier_focused);
+		} else if (b_settings.centroid_alg == CentroidAlgorithm::GRID_BASED) {
+			// current_metric_partition = get_metric_partition();
+
+			// ROS_INFO("%s - current metric partition size: %d", name.c_str(), 
+			// 	(int)current_metric_partition.size());
+
+			// Then what?
 		}
 	}
 
@@ -342,6 +360,39 @@ void Agent::step() {
 	// 	position += velocity * 0.1;
 
 	// heading = wrapToPi(heading + w * 0.1);
+}
+
+std::vector<Vector2d> Agent::get_metric_partition() {
+	std::vector<Vector2d> partition;
+
+	for (Point_2& gp : global_metric_grid) {
+		Point_2 location(position(0), position(1));
+		double min_dist = a_star_search(location, gp, m_params.physical_radius * 4., 
+										actual_region, false);
+		// double min_dist = a_star_search(location, gp, m_params.physical_radius, 
+		// 								actual_region, false, id == 1);
+		uint8_t min_idx = id;
+
+		std::unordered_map<uint8_t, AgentState>::iterator nb_itr = neighbours.begin();
+		for (; nb_itr != neighbours.end(); nb_itr++) {
+			Point_2 nb_location(nb_itr->second.position(0), nb_itr->second.position(1));
+			double nb_dist = a_star_search(nb_location, gp, m_params.physical_radius * 4., 
+											actual_region, false);
+			// double nb_dist = a_star_search(nb_location, gp, m_params.physical_radius, 
+			// 								actual_region, false, nb_itr->first == 1);
+
+			if (min_dist == -1 || min_dist > nb_dist) {
+				min_idx = nb_itr->first;
+				min_dist = nb_dist;
+			}
+		}
+
+		partition.push_back(Vector2d(CGAL::to_double(gp.x()), CGAL::to_double(gp.y())));
+		ROS_INFO("%s - Added (%.3f, %.3f)", name.c_str(), CGAL::to_double(gp.x()), 
+														  CGAL::to_double(gp.y()));
+	}
+
+	return partition;
 }
 
 void Agent::visibility_polygon() {
@@ -593,12 +644,9 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 			// 	std::cout << std::endl;
 			// }
 
-			// super_nodes.emplace_back(calculate_non_uniform_utility(node, entry.second.weight, 
-			// 													   local_mg_points, 
-			// 													   inBisectors), node);
 			super_nodes.emplace_back(calculate_non_uniform_utility(node, entry.second.weight, 
-																   local_mg_points, inBisectors) * 
-																	entry.second.weight, node);
+																   local_mg_points, 
+																   inBisectors), node);
 		}
 
 		// if (id == 1) {
@@ -622,6 +670,10 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 		// 	ROS_INFO("%s - TV: (%.3f, %.3f), U: %.3f", name.c_str(), target(0), target(1), 
 		// 												t_itr->first);
 		// }
+
+
+		// How about A* here ???
+
 
 		std::vector<UtilityPair> heuristics = skeletal_map.getNextToVertexFrom(position, target);
 
@@ -979,6 +1031,36 @@ bool Agent::handle_DumpSkeleton(std_srvs::Trigger::Request& req, std_srvs::Trigg
 		ROS_ERROR("%s could not dump skeleton - %s !", name.c_str(), e.what());
 		res.success = false;
 		res.message = "FAIL";
+		return false;
+	}
+}
+
+bool Agent::handle_MetricPartition(GetMetricPartition::Request& req, GetMetricPartition::Response& res) {
+	try {
+		current_metric_partition = get_metric_partition();
+
+		ROS_INFO("%s - current metric partition size: %d", name.c_str(), 
+			(int)current_metric_partition.size());
+
+		for (Vector2d& mpv : current_metric_partition) {
+			geometry_msgs::Point mpp;
+			mpp.x = mpv(0);
+			mpp.y = mpv(1);
+
+			res.partition.push_back(mpp);
+		}
+
+		if (current_metric_partition.size() == 0) {
+			ROS_WARN("%s has sent empty metric partition!", name.c_str());
+		} else {
+			ROS_INFO("%s has sent it's metric partition.", name.c_str());
+		}
+
+		res.success = true;
+		return true;
+	} catch(std::exception& e) {
+		ROS_ERROR("%s could not send metric partition - %s !", name.c_str(), e.what());
+		res.success = false;
 		return false;
 	}
 }

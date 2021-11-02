@@ -99,15 +99,15 @@ sensing_params:
     hfov_range_deg: 180.
 
 behaviours:
-    stationary: false
+    stationary: true
     limited_sensing: false
     flocking: false
     planning: true
     visibility: true
     voronoi: true
 
-# centroid_alg: "frontier_focused"
-centroid_alg: "geodesic_approximate"
+centroid_alg: "frontier_focused"
+# centroid_alg: "geodesic_approximate"
 # centroid_alg: "geometric"
 # centroid_alg: "grid_based"
 

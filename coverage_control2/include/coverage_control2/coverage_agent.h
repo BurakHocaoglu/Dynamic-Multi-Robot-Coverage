@@ -1,7 +1,8 @@
 #ifndef DIST_COVERAGE_AGENT_H
 #define DIST_COVERAGE_AGENT_H
 
-#include "coverage_control2/coverage_utils.h"
+// #include "coverage_control2/coverage_utils.h"
+#include "coverage_control2/coverage_map.h"
 
 # define nice(os) ((os == CGAL::ON_ORIENTED_BOUNDARY) ? "on boundary" :  \
                    (os == CGAL::POSITIVE) ? "inside" : "outside")
@@ -27,6 +28,8 @@ class Agent {
 		void step();
 
 	private:
+		std::vector<Vector2d> get_metric_partition();
+
 		void visibility_polygon();
 		void visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors, 
 										std::vector<UtilityPair>& outFrontier);
@@ -49,6 +52,7 @@ class Agent {
 		bool handle_SetInitialPose(SetInitialPose::Request& req, SetInitialPose::Response& res);
 		bool handle_SetReady(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 		bool handle_DumpSkeleton(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
+		bool handle_MetricPartition(GetMetricPartition::Request& req, GetMetricPartition::Response& res);
 
 		ros::NodeHandle nh;
 		ros::Publisher vpoly_pub;
@@ -61,6 +65,7 @@ class Agent {
 		ros::ServiceServer initPose_service;
 		ros::ServiceServer ready_service;
 		ros::ServiceServer dump_skeleton_service;
+		ros::ServiceServer metric_partition_service;
 
 		std::unordered_map<uint8_t, AgentState> neighbours;
 
@@ -103,6 +108,9 @@ class Agent {
 
 		Polygon_with_holes_2 current_work_region;
 		SsPtr current_skeleton;
+
+		std::vector<Point_2> global_metric_grid;
+		std::vector<Vector2d> current_metric_partition;
 };
 
 #endif // DIST_COVERAGE_AGENT_H

@@ -41,6 +41,7 @@ add_service_files(
    SetInitialPose.srv
    SetId.srv
    PrintMass.srv
+   GetMetricPartition.srv
 )
 
 generate_messages(

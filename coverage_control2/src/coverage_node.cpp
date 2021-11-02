@@ -59,8 +59,6 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-	agent.set_task_region_from_raw(exp_region, exp_obstacles);
-
 	if (node.getParam("/motion_params", motion_params)) {
 		m_params.delta_t = motion_params["delta_t"];
 		frequency = 1. / m_params.delta_t;
@@ -84,6 +82,8 @@ int main(int argc, char **argv) {
 		ROS_ERROR("Could not load motion params!");
 		return 0;
 	}
+
+	agent.set_task_region_from_raw(exp_region, exp_obstacles);
 
 	if (node.getParam("/sensing_params", sensing_params)) {
 		s_params.sigma_local = sensing_params["sigma_local"];

@@ -17,6 +17,113 @@ void get_metric_graph(Polygon_with_holes_2& polygon, double resolution,
 	}
 }
 
+double a_star_search(Point_2& start, Point_2& goal, double step_size, 
+					 Polygon_with_holes_2& environment, bool prune, bool debug, 
+					 bool with_path, std::vector<Vector2d>* outPathR) {
+	auto inside_check = CGAL::oriented_side(start, environment);
+	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) {
+		if (debug)
+			std::cout << "Invalid start location!\n";
+
+		return -1;
+	}
+
+	inside_check = CGAL::oriented_side(goal, environment);
+	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) {
+		if (debug) 
+			std::cout << "Invalid goal location!\n";
+
+		return -1;
+	}
+
+	if (with_path && outPathR != nullptr)
+		assert(outPathR->size() == 0);
+
+	bool found = false;
+	double total_cost = 0.;
+	auto UtilityPairCmp = [](UtilityPair p1, UtilityPair p2) { return p1.first < p2.first; };
+
+	std::set<Vector2d, Vector2dComp> visited;
+	std::priority_queue<UtilityPair, std::vector<UtilityPair>, 
+						decltype(UtilityPairCmp)> frontier{UtilityPairCmp};
+	std::unordered_map<Vector2d, UtilityPair, Vector2dHash<Vector2d> > branch;
+
+	std::vector<std::pair<Vector2d, double> > actions;
+	for (int i = -1; i < 2; i++) {
+		for (int j = -1; j < 2; j++) {
+			if (i == 0 && j == 0)
+				continue;
+
+			Vector2d action(i, j);
+			actions.push_back(std::make_pair(action, action.norm()));
+		}
+	}
+
+	Vector2d start_node(CGAL::to_double(start.x()), CGAL::to_double(start.y()));
+	Vector2d goal_node(CGAL::to_double(goal.x()), CGAL::to_double(goal.y()));
+
+	frontier.push(std::make_pair(0., start_node));
+	visited.insert(start_node);
+
+	while (!frontier.empty()) {
+		std::pair<double, Vector2d> item = frontier.top();
+		frontier.pop();
+
+		if ((goal_node - item.second).norm() < step_size) {
+		// if (goal_node == item.second) {
+			found = true;
+			break;
+		} else {
+			for (std::pair<Vector2d, double>& act : actions) {
+				Vector2d next_node = item.second + act.first;
+
+				inside_check = CGAL::oriented_side(Point_2(next_node(0), next_node(1)), environment);
+				if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+					continue;
+
+				std::set<Vector2d>::iterator v_itr = visited.find(next_node);
+				if (v_itr != visited.end())
+					continue;
+
+				Vector2d diff = goal_node - next_node;
+				double cost = item.first + act.second + std::fabs(diff(0)) + std::fabs(diff(1));
+				UtilityPair entry = std::make_pair(cost, next_node);
+
+				frontier.push(entry);
+				branch[next_node] = entry;
+				visited.insert(next_node);
+			}
+		}
+	}
+
+	if (found) {
+		total_cost = branch[goal_node].first;
+
+		if (with_path && outPathR != nullptr) {
+			Vector2d temp = goal_node;
+			outPathR->push_back(goal_node);
+
+			// while (branch[temp].second != start_node) {
+			while ((branch[temp].second - start_node).norm() > step_size) {
+				outPathR->push_back(temp);
+				temp = branch[temp].second;
+			}
+
+			outPathR->push_back(temp);
+		}
+	} else {
+		if (debug) {
+			std::cout << "There is no valid path from (" 
+					  << start_node(0) << ", " << start_node(1) << ") to ("
+					  << goal_node(0) << ", " << goal_node(1) << ")\n";
+		}
+
+		total_cost = -1;
+	}
+
+	return total_cost;
+}
+
 // ---------------------------------------------------------------------------------------------
 
 SkeletalGraph::SkeletalGraph(uint32_t c) {

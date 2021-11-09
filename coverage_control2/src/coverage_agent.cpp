@@ -129,13 +129,19 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 										 inflated_region_holes.begin(), 
 										 inflated_region_holes.end());
 
+	CGAL::insert_non_intersecting_curves(environment_arr, real_vis_segments.begin(), 
+														real_vis_segments.end());
+
+	environment_pl.attach(environment_arr);
+	// environment_pl = new CGAL::Arr_naive_point_location<Arrangement_2>(environment_arr);
+
 	Bbox_2 bbox = actual_region.outer_boundary().bbox();
 	std::cout << name << " - BBox: (" << bbox.xmin() << ", " << bbox.ymin() << ") - (" 
 									  << bbox.xmax() << ", " << bbox.ymax() << ")\n";
 
-	ROS_INFO("%s - constructing global metric grid...", name.c_str());
+	// ROS_INFO("%s - constructing global metric grid...", name.c_str());
 	get_metric_graph(actual_region, m_params.physical_radius * 4., global_metric_grid);
-	ROS_INFO("%s - constructed global metric grid (%d points)", name.c_str(), (int)global_metric_grid.size());
+	// ROS_INFO("%s - constructed global metric grid (%d points)", name.c_str(), (int)global_metric_grid.size());
 }
 
 bool Agent::ready() {
@@ -397,16 +403,19 @@ std::vector<Vector2d> Agent::get_metric_partition() {
 
 void Agent::visibility_polygon() {
 	Polygon_2 new_visibility_poly;
-	Arrangement_2 local_env_context, current_visibility;
+	// Arrangement_2 local_env_context, current_visibility;
+	Arrangement_2 current_visibility;
 	// CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
-	CGAL::insert_non_intersecting_curves(local_env_context, real_vis_segments.begin(), 
-															real_vis_segments.end());
+	// CGAL::insert_non_intersecting_curves(local_env_context, real_vis_segments.begin(), 
+	// 														real_vis_segments.end());
 
 	Point_2 query(position(0), position(1));
-	CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
-	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
+	// CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
+	// CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
+	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = environment_pl.locate(query);
 
-	TEV tev(local_env_context);
+	// TEV tev(local_env_context);
+	TEV tev(environment_arr);
 	Face_handle fh;
 
 	if (obj.which() == 0) {

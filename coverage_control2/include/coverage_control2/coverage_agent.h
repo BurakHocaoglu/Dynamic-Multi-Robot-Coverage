@@ -98,6 +98,9 @@ class Agent {
 		Polygon_2_Array region_holes;
 		Polygon_2_Array inflated_region_holes;
 
+		Arrangement_2 environment_arr;
+		CGAL::Arr_naive_point_location<Arrangement_2> environment_pl;
+
 		Polygon_with_holes_2 actual_region;
 
 		std::vector<BoundarySegment> segments_to_avoid;

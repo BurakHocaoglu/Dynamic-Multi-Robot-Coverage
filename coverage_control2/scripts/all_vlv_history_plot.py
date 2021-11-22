@@ -118,6 +118,18 @@ def get_metric_graph(poly, holes=[]):
 
 	return v_in, v_b
 
+def compute_area_workload(poly, holes=[]):
+	sh_poly = shgeom.Polygon(poly)
+	outer_W = sh_poly.area
+
+	for hole in holes:
+		sh_hole = shgeom.Polygon(hole)
+		outer_W -= sh_hole.area
+
+	# assert (outer_W > 0.)
+
+	return outer_W
+
 def animate_history(i, ax, lims, hist):
 	try:
 		ax.clear()
@@ -133,6 +145,7 @@ def animate_history(i, ax, lims, hist):
 			ax.add_patch(obs_patch)
 
 		if hist is not None:
+			workloads = []
 			for aid, hist_piece in hist.items():
 				i = min(len(hist_piece["position"]) - 1, globals()["history_index"])
 				pos = hist_piece["position"][i]
@@ -145,6 +158,8 @@ def animate_history(i, ax, lims, hist):
 				for h in holes:
 					ax.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=0.5, zorder=1))
 
+				workloads.append(compute_area_workload(poly, holes))
+
 				skeleton = get_skeleton(poly, holes)
 				for h in skeleton.halfedges:
 					if h.is_bisector:
@@ -156,16 +171,20 @@ def animate_history(i, ax, lims, hist):
 					plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
 														   v.time, color='blue', fill=False))
 
-				mg_in, mg_b = get_metric_graph(np.array(poly, dtype=float), 
-												[np.array(h, dtype=float) for h in holes])
+				# mg_in, mg_b = get_metric_graph(np.array(poly, dtype=float), 
+				# 								[np.array(h, dtype=float) for h in holes])
 
-				if len(mg_in) > 0:
-					mg_in_xs, mg_in_ys = zip(*mg_in)
-					ax.scatter(mg_in_xs, mg_in_ys, s=0.5, color=robot_color)
+				# if len(mg_in) > 0:
+				# 	mg_in_xs, mg_in_ys = zip(*mg_in)
+				# 	ax.scatter(mg_in_xs, mg_in_ys, s=0.5, color=robot_color)
 
-				if len(mg_b) > 0:
-					mg_b_xs, mg_b_ys = zip(*mg_b)
-					ax.scatter(mg_b_xs, mg_b_ys, s=0.5, color=robot_color)
+				# if len(mg_b) > 0:
+				# 	mg_b_xs, mg_b_ys = zip(*mg_b)
+				# 	ax.scatter(mg_b_xs, mg_b_ys, s=0.5, color=robot_color)
+
+			if len(workloads) > 0:
+				std = np.std(workloads)
+				print("Workload Std. - Var.: {} - {}".format(std, std ** 2))
 
 	except Exception as e:
 		# raise e
@@ -191,7 +210,7 @@ if __name__ == "__main__":
 	# exp_region = [[30., -20.], [30., -40.], [10., -50.], [40., -60.], [20., -110.], [40., -90.], 
 	# 				[90., -100.], [70., -80.], [80., -50.], [70., -10.], [50., -30.]]
 
-	exp_region = [[-100., 90.], [-100., -70.], [-20., -70.], [-20., 90.]]
+	# exp_region = [[-100., 90.], [-100., -70.], [-20., -70.], [-20., 90.]]
 	# exp_region = [[-100., 90.], [-100., 70.], [-70., 70.], [-70., 64.], 
 	# 				[-100., 64.], [-100., 26.], [-72., 26.], [-72., 38.], 
 	# 				[-66., 38.], [-66., 22.], [-100., 22.], [-100., -70.], 
@@ -225,6 +244,9 @@ if __name__ == "__main__":
 		"obs6": [[-52., -14.], [-28., -14.], [-28., -30.], [-32., -30.], [-32., -17.], [-52., -17.]],
 		"obs7": [[-80., -22.], [-74., -22.], [-74., -48.], [-54., -48.], 
 				 [-54., -54.], [-74., -54.], [-74., -68.], [-80., -68.]],
+	}
+	exp_obstacles = {
+		"obs1": [[60., -60.], [-60., -60.], [-60., 60.], [60., 60.]],
 	}
 	for obs_name, obs in exp_obstacles.items():
 		obstacle_patches[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)

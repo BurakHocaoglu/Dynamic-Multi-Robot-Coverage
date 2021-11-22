@@ -2,25 +2,21 @@
 
 <launch>
 
-	<arg name="count" default="4" />
+	<arg name="count" default="9" />
 	<arg name="prefix" default="gdb -ex run --args" />
 
 	<rosparam command="load" file="$(find coverage_control2)/cfg/params.yaml" />
 
-	<!-- Monitor node -->
 	<node name="monitor" pkg="coverage_control2" type="monitor.py" args="$(arg count)" output="screen" />
 
 	<node name="A1" pkg="coverage_control2" type="dist_coverage_node" args="1" output="screen" />
 	<node name="A2" pkg="coverage_control2" type="dist_coverage_node" args="2" output="screen" />
 	<node name="A3" pkg="coverage_control2" type="dist_coverage_node" args="3" output="screen" />
 	<node name="A4" pkg="coverage_control2" type="dist_coverage_node" args="4" output="screen" />
-
-	<!-- <node name="A1" pkg="coverage_control2" type="dist_coverage_node" args="1" launch-prefix="$(arg prefix)" output="screen" /> -->
-
-	<!-- <node name="A2" pkg="coverage_control2" type="dist_coverage_node" args="2" launch-prefix="$(arg prefix)" output="screen" /> -->
-
-	<!-- <node name="A3" pkg="coverage_control2" type="dist_coverage_node" args="3" launch-prefix="$(arg prefix)" output="screen" /> -->
-
-	<!-- <node name="A5" pkg="coverage_control2" type="dist_coverage_node" args="5" launch-prefix="$(arg prefix)" output="screen" /> -->
+	<node name="A5" pkg="coverage_control2" type="dist_coverage_node" args="5" output="screen" />
+	<node name="A6" pkg="coverage_control2" type="dist_coverage_node" args="6" output="screen" />
+	<node name="A7" pkg="coverage_control2" type="dist_coverage_node" args="7" output="screen" />
+	<node name="A8" pkg="coverage_control2" type="dist_coverage_node" args="8" output="screen" />
+	<node name="A9" pkg="coverage_control2" type="dist_coverage_node" args="9" output="screen" />
 
 </launch>

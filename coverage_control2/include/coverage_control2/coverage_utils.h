@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <string>
 #include <cmath>
+#include <cassert>
 #include <chrono>
 #include <map>
 #include <typeinfo>
@@ -49,6 +50,8 @@
 #include <CGAL/Boolean_set_operations_2.h>
 #include <CGAL/Polygon_2.h>
 #include <CGAL/Polygon_with_holes_2.h>
+#include <CGAL/Constrained_Delaunay_triangulation_2.h>
+#include <CGAL/Triangulation_face_base_with_info_2.h>
 #include <CGAL/create_straight_skeleton_from_polygon_with_holes_2.h>
 #include <CGAL/create_offset_polygons_from_polygon_with_holes_2.h>
 
@@ -78,6 +81,24 @@ typedef CGAL::Arrangement_2<Traits_2> Arrangement_2;
 typedef Traits_2::Point_2 Arr_Point_2;
 typedef Arrangement_2::Face_handle Face_handle;
 
+struct FaceInfo2 {
+	int nesting_level;
+
+	FaceInfo2() {}
+	bool in_domain() {
+		return nesting_level % 2 == 1;
+	}
+};
+
+typedef CGAL::Triangulation_vertex_base_2<K> Vb;
+typedef CGAL::Triangulation_face_base_with_info_2<FaceInfo2, K> Fbb;
+typedef CGAL::Constrained_triangulation_face_base_2<K, Fbb> Fb;
+typedef CGAL::Triangulation_data_structure_2<Vb, Fb> TDS;
+typedef CGAL::Exact_predicates_tag Itag;
+typedef CGAL::Constrained_Delaunay_triangulation_2<K, TDS, Itag> CDT;
+typedef CDT::Point CDT_Point;
+typedef CDT::Face_handle CDT_Face_handle;
+
 typedef Arrangement_2::Vertex_const_handle Vertex_const_handle;
 typedef Arrangement_2::Halfedge_const_handle Halfedge_const_handle;
 typedef Arrangement_2::Face_const_handle Face_const_handle;
@@ -100,6 +121,7 @@ typedef Eigen::Matrix<double, Eigen::Dynamic, 2> ConstraintMatrix2d;
 typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> MatrixXd;
 
 typedef std::pair<double, Vector2d> UtilityPair;
+typedef std::pair<Vector2d, double> MoveAction;
 
 typedef coverage_control2::AgentState AgentStateMsg;
 typedef coverage_control2::SetInitialPose SetInitialPose;
@@ -182,6 +204,51 @@ struct SkeletalNode {
 	double weight;
 };
 
+struct BFSAgent {
+	uint8_t id;
+	Vector2d p, gp;
+	double step_size;
+	std::set<std::pair<double, double> > visited;
+	std::set<std::pair<double, double> > frontier;
+
+	BFSAgent() {}
+	BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size) : 
+		id(_id), p(pos), gp(gpos), step_size(_step_size) {
+			frontier.insert(std::make_pair(gp(0), gp(1)));
+	}
+
+	std::set<std::pair<double, double> > frontier_expand(std::vector<MoveAction>& actions, 
+									   Polygon_with_holes_2& context) {
+		if (frontier.size() == 0)
+			return frontier;
+
+		std::set<std::pair<double, double> > next_wave;
+		while (!frontier.empty()) {
+			std::pair<double, double> f_pos = *(frontier.begin());
+			frontier.erase(f_pos);
+			visited.insert(f_pos);
+
+			Vector2d f_pos_v(f_pos.first, f_pos.second);
+			for (MoveAction& act : actions) {
+				Vector2d next_pos = act.first * step_size + f_pos_v;
+
+				auto inside_check = CGAL::oriented_side(Point_2(next_pos(0), next_pos(1)), context);
+				if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+					continue;
+
+				std::pair<double, double> next_pos_key = std::make_pair(next_pos(0), next_pos(1));
+				if (frontier.find(next_pos_key) != frontier.end())
+					continue;
+
+				next_wave.insert(next_pos_key);
+			}
+		}
+
+		frontier = next_wave;
+		return frontier;
+	}
+};
+
 // ---------------------------------------------------------------------------------------------
 // Copied from 
 // https://wjngkoh.wordpress.com/2015/03/04/c-hash-function-for-eigen-matrix-and-vector/
@@ -219,6 +286,11 @@ void get_metric_graph(Polygon_with_holes_2& polygon, double resolution,
 double a_star_search(Point_2& start, Point_2& goal, double step_size, 
 					 Polygon_with_holes_2& environment, bool prune, bool debug=false, 
 					 bool with_path=false, std::vector<Vector2d>* outPathR=nullptr);
+
+void mark_domains(CDT& ct, Face_handle start, int index, std::list<CDT::Edge>& border);
+void mark_domains(CDT& cdt);
+
+void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt);
 
 class SkeletalGraph {
 	public:

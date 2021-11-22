@@ -124,6 +124,69 @@ double a_star_search(Point_2& start, Point_2& goal, double step_size,
 	return total_cost;
 }
 
+void mark_domains(CDT& ct, CDT_Face_handle start, int index, std::list<CDT::Edge>& border) {
+	if (start->info().nesting_level != -1) {
+		return;
+	}
+
+	std::list<CDT_Face_handle> queue;
+	queue.push_back(start);
+
+	while (!queue.empty()) {
+		CDT_Face_handle fh = queue.front();
+		queue.pop_front();
+
+		if (fh->info().nesting_level == -1) {
+			fh->info().nesting_level = index;
+
+			for (int i = 0; i < 3; i++) {
+				CDT::Edge e(fh, i);
+				CDT_Face_handle n = fh->neighbor(i);
+
+				if (n->info().nesting_level == -1) {
+					if (ct.is_constrained(e)) 
+						border.push_back(e);
+
+					else 
+						queue.push_back(n);
+				}
+			}
+		}
+	}
+}
+
+void mark_domains(CDT& cdt) {
+	for (CDT::Face_handle f : cdt.all_face_handles()) {
+		f->info().nesting_level = -1;
+	}
+
+	std::list<CDT::Edge> border;
+	mark_domains(cdt, cdt.infinite_face(), 0, border);
+
+	while (!border.empty()) {
+		CDT::Edge e = border.front();
+		border.pop_front();
+
+		CDT::Face_handle n = e.first->neighbor(e.second);
+		if (n->info().nesting_level == -1) {
+			mark_domains(cdt, n, e.first->info().nesting_level + 1, border);
+		}
+	}
+}
+
+void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt) {
+	outCdt.insert_constraint(pwh.outer_boundary().vertices_begin(), 
+							 pwh.outer_boundary().vertices_end(), true);
+
+	HoleIterator h_itr = pwh.holes_begin();
+	for (; h_itr != pwh.holes_end(); h_itr++) {
+		outCdt.insert_constraint(h_itr->vertices_begin(), h_itr->vertices_end(), true);
+	}
+
+	assert(outCdt.is_valid());
+	mark_domains(outCdt);
+}
+
 // ---------------------------------------------------------------------------------------------
 
 SkeletalGraph::SkeletalGraph(uint32_t c) {

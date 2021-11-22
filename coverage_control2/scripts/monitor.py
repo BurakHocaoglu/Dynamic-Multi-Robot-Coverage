@@ -40,6 +40,7 @@ obstacle_patches = dict()
 
 visibility_focus_id = -1
 visibility_focus_level = 0
+global_agent_init_seed = None
 
 def get_area(polygon):
 	area = 0
@@ -207,11 +208,11 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 				ax.add_patch(vpoly)
 
 def customSigIntHandler(signum, frame):
-	for aid, vlv_history in globals()["all_vlv_history"].items():
-		with open("Agent{}_VLV.json".format(aid), "w") as H:
-			json.dump(vlv_history, H, indent=4)
+	# for aid, vlv_history in globals()["all_vlv_history"].items():
+	# 	with open("Agent{}_VLV.json".format(aid), "w") as H:
+	# 		json.dump(vlv_history, H, indent=4)
 
-		print("Dumped Agent {} VLV history.".format(aid))
+	# 	print("Dumped Agent {} VLV history.".format(aid))
 
 	with open("all_vlv_history.json", "w") as H:
 		json.dump(globals()["all_vlv_history"], H, indent=4)
@@ -255,6 +256,14 @@ if __name__ == "__main__":
 
 		obstacle_patches[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
 		exp_obstacles[obs_name] = sg.Polygon(obs).buffer(1.)
+
+	agent_init_rand_seed_key = rospy.search_param("agent_init_rand_seed")
+	if agent_init_rand_seed_key is not None:
+		global_agent_init_seed = rospy.get_param(agent_init_rand_seed_key)
+		np.random.seed(global_agent_init_seed)
+
+	else:
+		rospy.logwarn("No agent initial location random seed is found! Reverting to random seeding.")
 
 	rand_positions = get_random_positions(exp_region, exp_obstacles, limits, agent_count)
 

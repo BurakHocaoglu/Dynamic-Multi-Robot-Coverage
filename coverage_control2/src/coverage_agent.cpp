@@ -200,7 +200,7 @@ double Agent::calculate_workload() {
 		negative_workload += CGAL::to_double(hole_area);
 	}
 
-	return CGAL::to_double(outer_area) - negative_workload;
+	return CGAL::to_double(outer_area) + negative_workload;
 }
 
 void Agent::select_goal_from_local_frontier(std::vector<UtilityPair>& frontier) {
@@ -401,21 +401,27 @@ std::vector<Vector2d> Agent::get_metric_partition() {
 	return partition;
 }
 
+Vector2d Agent::compute_geodesic_vector() {
+	// ...
+
+	return position;
+}
+
 void Agent::visibility_polygon() {
 	Polygon_2 new_visibility_poly;
-	// Arrangement_2 local_env_context, current_visibility;
-	Arrangement_2 current_visibility;
+	Arrangement_2 local_env_context, current_visibility;
+	// Arrangement_2 current_visibility;
 	// CGAL::insert_non_intersecting_curves(local_env_context, vis_segments.begin(), vis_segments.end());
-	// CGAL::insert_non_intersecting_curves(local_env_context, real_vis_segments.begin(), 
-	// 														real_vis_segments.end());
+	CGAL::insert_non_intersecting_curves(local_env_context, real_vis_segments.begin(), 
+															real_vis_segments.end());
 
 	Point_2 query(position(0), position(1));
-	// CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
-	// CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
-	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = environment_pl.locate(query);
+	CGAL::Arr_naive_point_location<Arrangement_2> pl(local_env_context);
+	CGAL::Arr_point_location_result<Arrangement_2>::Type obj = pl.locate(query);
+	// CGAL::Arr_point_location_result<Arrangement_2>::Type obj = environment_pl.locate(query);
 
-	// TEV tev(local_env_context);
-	TEV tev(environment_arr);
+	TEV tev(local_env_context);
+	// TEV tev(environment_arr);
 	Face_handle fh;
 
 	if (obj.which() == 0) {
@@ -574,12 +580,14 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 	MGRTree metric_nn_rtree;
 	std::vector<Point_2> metric_graph_points;
 
-	get_metric_graph(current_work_region, m_params.physical_radius * 4., metric_graph_points);
+	if (frontierFocus) {
+		get_metric_graph(current_work_region, m_params.physical_radius * 4., metric_graph_points);
 
-	size_t i = 0;
-	for (Point_2& mgp : metric_graph_points) {
-		metric_nn_rtree.insert(std::make_pair(MGPoint(CGAL::to_double(mgp.x()), 
-													  CGAL::to_double(mgp.y())), i));
+		size_t i = 0;
+		for (Point_2& mgp : metric_graph_points) {
+			metric_nn_rtree.insert(std::make_pair(MGPoint(CGAL::to_double(mgp.x()), 
+														  CGAL::to_double(mgp.y())), i));
+		}
 	}
 	// ----------------------------------------------------------------------------------------------
 
@@ -741,31 +749,73 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 }
 
 void Agent::compute_geometric_centroid() {
-	double cx = 0.0, cy = 0.0;
-	double area = CGAL::to_double(current_work_region.outer_boundary().area());
+	// double cx = 0.0, cy = 0.0;
+	// double area = CGAL::to_double(current_work_region.outer_boundary().area());
 
-	size_t nVertices = current_work_region.outer_boundary().size();
+	// size_t nVertices = current_work_region.outer_boundary().size();
+	// for (size_t i = 0; i < nVertices; i++) {
+	// 	size_t j = (i + 1) % nVertices;
+
+	// 	Point_2 p1 = current_work_region.outer_boundary().vertex(i);
+	// 	Point_2 p2 = current_work_region.outer_boundary().vertex(j);
+
+	// 	cx += (CGAL::to_double(p1.x()) + CGAL::to_double(p2.x())) * 
+	// 	        (CGAL::to_double(p1.x()) * CGAL::to_double(p2.y()) - 
+	// 	         CGAL::to_double(p2.x()) * CGAL::to_double(p1.y()));
+
+	// 	cy += (CGAL::to_double(p1.y()) + CGAL::to_double(p2.y())) * 
+	// 	        (CGAL::to_double(p1.x()) * CGAL::to_double(p2.y()) - 
+	// 	         CGAL::to_double(p2.x()) * CGAL::to_double(p1.y()));
+	// }
+
+	// cx /= 6.0 * area;
+	// cy /= 6.0 * area;
+
+	int count = 0;
+	Vector2d cm_total(0., 0.);
+	double outer_area;
+	Vector2d outerCm = compute_center_of_mass(current_work_region.outer_boundary(), outer_area);
+	cm_total += outerCm * outer_area;
+	current_workload = outer_area;
+
+	HoleIterator cwrh_itr = current_work_region.holes_begin();
+	for (; cwrh_itr != current_work_region.holes_end(); cwrh_itr++) {
+		double hole_area;
+		Vector2d holeCm = compute_center_of_mass(*cwrh_itr, hole_area);
+		cm_total += holeCm * hole_area;
+		current_workload += hole_area;
+	}
+
+	// current_workload = calculate_workload();
+	// goal = Vector2d(cx, cy);
+
+	goal = cm_total / current_workload;
+}
+
+Vector2d Agent::compute_center_of_mass(Polygon_2& poly, double& outArea) {
+	double pcx = 0., pcy = 0.;
+	outArea = CGAL::to_double(poly.area());
+
+	size_t nVertices = poly.size();
 	for (size_t i = 0; i < nVertices; i++) {
 		size_t j = (i + 1) % nVertices;
 
-		Point_2 p1 = current_work_region.outer_boundary().vertex(i);
-		Point_2 p2 = current_work_region.outer_boundary().vertex(j);
+		Point_2 p1 = poly.vertex(i);
+		Point_2 p2 = poly.vertex(j);
 
-		cx += (CGAL::to_double(p1.x()) + CGAL::to_double(p2.x())) * 
+		pcx += (CGAL::to_double(p1.x()) + CGAL::to_double(p2.x())) * 
 		        (CGAL::to_double(p1.x()) * CGAL::to_double(p2.y()) - 
 		         CGAL::to_double(p2.x()) * CGAL::to_double(p1.y()));
 
-		cy += (CGAL::to_double(p1.y()) + CGAL::to_double(p2.y())) * 
+		pcy += (CGAL::to_double(p1.y()) + CGAL::to_double(p2.y())) * 
 		        (CGAL::to_double(p1.x()) * CGAL::to_double(p2.y()) - 
 		         CGAL::to_double(p2.x()) * CGAL::to_double(p1.y()));
 	}
 
-	cx /= 6.0 * area;
-	cy /= 6.0 * area;
+	pcx /= 6.0 * outArea;
+	pcy /= 6.0 * outArea;
 
-	current_workload = calculate_workload();
-
-	goal = Vector2d(cx, cy);
+	return Vector2d(pcx, pcy);
 }
 
 double Agent::workload_utility(Point_2& p, std::vector<BoundarySegment>& bisectors) {
@@ -971,6 +1021,17 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 	} else {
 		ROS_WARN("%s - Not enough valid voronoi vertices!", name.c_str());
 	}
+}
+
+void Agent::geodesic_voronoi_partition_discrete() {
+	// std::unordered_map<uint8_t, BFSAgent> bfs_agents;
+
+	// for (std::unordered_map<uint8_t, AgentState>& nb_entry : neighbours) {
+	// 	bfs_agents[nb_entry.first] = BFSAgent(nb_entry.first, 
+	// 										  nb_entry.second.position, );
+	// }
+
+	// auto check_emptiness = [&] ()
 }
 
 void Agent::debug_cb(const std_msgs::Empty::ConstPtr& msg) {

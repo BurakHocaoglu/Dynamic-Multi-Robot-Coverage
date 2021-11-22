@@ -30,12 +30,15 @@ class Agent {
 	private:
 		std::vector<Vector2d> get_metric_partition();
 
+		Vector2d compute_geodesic_vector();
+
 		void visibility_polygon();
 		void visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors, 
 										std::vector<UtilityPair>& outFrontier);
 
 		void build_local_skeleton(std::vector<BoundarySegment>& bisectors, bool frontierFocus=false);
 		void compute_geometric_centroid();
+		Vector2d compute_center_of_mass(Polygon_2& poly, double& outArea);
 		double workload_utility(Point_2& p, std::vector<BoundarySegment>& bisectors);
 		double calculate_non_uniform_utility(Vector2d& major, double r, std::vector<Vector2d>& minor, 
 											 std::vector<BoundarySegment>& bisectors);
@@ -45,6 +48,8 @@ class Agent {
 								  ConstraintMatrix2d& A, 
 								  VectorXd& b, 
 								  std::vector<BoundarySegment>& outRelevantBisectors);
+
+		void geodesic_voronoi_partition_discrete();
 
 		void debug_cb(const std_msgs::Empty::ConstPtr& msg);
 		void state_cb(const AgentStateMsg::ConstPtr& msg);

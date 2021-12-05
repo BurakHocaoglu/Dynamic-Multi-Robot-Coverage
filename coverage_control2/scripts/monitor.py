@@ -20,7 +20,7 @@ import shapely.geometry as sg
 
 from std_srvs.srv import Trigger
 
-from coverage_control2.msg import AgentState, Polygon, HistoryStep, PolygonWithHoles
+from coverage_control2.msg import AgentState, Polygon, HistoryStep, PolygonWithHoles, GeodesicPartition
 from coverage_control2.srv import SetInitialPose, SetId, PrintMass
 
 __COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0.99,0), (0.99,0,0.99),
@@ -32,6 +32,7 @@ all_cvx_voronoi = dict()
 all_vl_voronoi = dict()
 motion_history = dict()
 all_vlv_history = dict()
+all_geodesic_partitions = dict()
 
 exp_region = []
 region_patch = None
@@ -137,6 +138,13 @@ def vlv_poly_cb(msg):
 	else:
 		print("{} - Invalid poly".format(msg.id))
 
+def geodesic_partition_cb(msg):
+	if globals()["all_geodesic_partitions"].get(msg.id) is None:
+		globals()["all_geodesic_partitions"][msg.id] = {"xcoords": [], "ycoords": []}
+
+	globals()["all_geodesic_partitions"][msg.id]["xcoords"] = msg.xcoords
+	globals()["all_geodesic_partitions"][msg.id]["ycoords"] = msg.ycoords
+
 def handle_vp_focus(req):
 	try:
 		globals()["visibility_focus_id"] = req.id
@@ -186,7 +194,7 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 		# State visualization
 		pos, vel, hdg, goal = state['pos'], state['vel'], state['hdg'], state['goal']
 		robot_color = globals()['__COLORS'][aid]
-		ax.quiver(pos[0], pos[1], np.cos(hdg), np.sin(hdg), color=robot_color)
+		# ax.quiver(pos[0], pos[1], np.cos(hdg), np.sin(hdg), color=robot_color)
 		ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
 		ax.add_artist(plt.Circle(tuple(goal), 1., color=robot_color))
 		x_hist, y_hist = zip(*(globals()["motion_history"][aid]))
@@ -206,6 +214,11 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 			vpoly = globals()["all_vpolygons"].get(aid)
 			if vpoly is not None:
 				ax.add_patch(vpoly)
+
+		elif globals()["visibility_focus_level"] == 4:
+			gpartition = globals()["all_geodesic_partitions"].get(aid)
+			if gpartition is not None:
+				ax.scatter(gpartition["xcoords"], gpartition["ycoords"], s=8., color=robot_color)
 
 def customSigIntHandler(signum, frame):
 	# for aid, vlv_history in globals()["all_vlv_history"].items():
@@ -229,6 +242,7 @@ if __name__ == "__main__":
 	vpoly_sub = rospy.Subscriber("/visibility_polys", Polygon, vpoly_cb, queue_size=20)
 	cvx_vor_sub = rospy.Subscriber("/convex_voronoi", Polygon, voronoi_cb, queue_size=20)
 	vlv_poly_sub = rospy.Subscriber("/visibility_limited_voronoi", HistoryStep, vlv_poly_cb, queue_size=20)
+	geodesic_partition_sub = rospy.Subscriber("/geodesic_partition", GeodesicPartition, geodesic_partition_cb, queue_size=20)
 
 	vp_vis_focus_service = rospy.Service("/set_vp_vis_focus", SetId, handle_vp_focus)
 	vis_focus_level_service = rospy.Service("/set_vis_focus_level", SetId, handle_vis_level)

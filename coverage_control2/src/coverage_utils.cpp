@@ -2,17 +2,23 @@
 
 void get_metric_graph(Polygon_with_holes_2& polygon, double resolution, 
 					  std::vector<Point_2>& outPoints) {
+	std::cout << "Resolution: " << resolution << std::endl;
+
 	Bbox_2 bbox = polygon.outer_boundary().bbox();
 
 	for (double xidx = bbox.xmin(); xidx < bbox.xmax(); xidx += resolution) {
 		for (double yidx = bbox.ymin(); yidx < bbox.ymax(); yidx += resolution) {
 			Point_2 p(xidx, yidx);
 
-			auto inside_check = CGAL::oriented_side(p, polygon);
-			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-				continue;
+			// auto inside_check = CGAL::oriented_side(p, polygon);
+			// if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+			// if (inside_check == CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+			// 	continue;
 
-			outPoints.push_back(p);
+			if (CGAL::oriented_side(p, polygon) == CGAL::POSITIVE) 
+				outPoints.push_back(p);
+
+			// outPoints.push_back(p);
 		}
 	}
 }
@@ -185,6 +191,62 @@ void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt) {
 
 	assert(outCdt.is_valid());
 	mark_domains(outCdt);
+}
+
+BFSAgent::BFSAgent() {}
+BFSAgent::BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size) : 
+	id(_id), p(pos), gp(gpos), step_size(_step_size) {
+		frontier.insert(std::make_pair(gp(0), gp(1)));
+}
+
+void BFSAgent::add_border_info(std::pair<double, double> border_vertex, uint8_t border_to) {
+	std::map<uint8_t, std::vector<std::pair<double, double> > >::iterator b_itr = borders.find(border_to);
+	if (b_itr != borders.end()) {
+		b_itr->second.push_back(border_vertex);
+	} else {
+		borders.insert(std::make_pair(border_to, std::vector<std::pair<double, double> >{border_vertex}));
+	}
+}
+
+std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveAction>& actions, 
+															   Polygon_with_holes_2& context) {
+	if (frontier.size() == 0)
+		return frontier;
+
+	std::set<std::pair<double, double> > next_wave, next_frontier;
+	while (!frontier.empty()) {
+		std::set<std::pair<double, double> >::iterator f_pos_itr = frontier.begin();
+		std::pair<double, double> f_pos = *f_pos_itr;
+		visited.insert(f_pos);
+
+		bool expanded = false;
+		Vector2d f_pos_v(f_pos.first, f_pos.second);
+		for (MoveAction& act : actions) {
+			Vector2d next_pos = act.first * step_size + f_pos_v;
+
+			// auto inside_check = CGAL::oriented_side(Point_2(next_pos(0), next_pos(1)), context);
+			// if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+			if (CGAL::oriented_side(Point_2(next_pos(0), next_pos(1)), context) != CGAL::POSITIVE)
+				continue;
+
+			std::pair<double, double> next_pos_key = std::make_pair(next_pos(0), next_pos(1));
+			if (frontier.find(next_pos_key) != frontier.end())
+				continue;
+
+			next_wave.insert(next_pos_key);
+			parents[next_pos_key] = f_pos;
+			expanded = true;
+		}
+
+		frontier.erase(f_pos_itr);
+	}
+
+	std::set_union(frontier.begin(), frontier.end(), 
+				   next_wave.begin(), next_wave.end(), 
+				   std::inserter(next_frontier, next_frontier.begin()));
+
+	frontier = next_frontier;
+	return frontier;
 }
 
 // ---------------------------------------------------------------------------------------------

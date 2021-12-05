@@ -34,6 +34,7 @@ add_message_files(
    HistoryStep.msg
    PolygonWithHoles.msg
    UtilityDebug.msg
+   GeodesicPartition.msg
 )
 
 add_service_files(
@@ -41,7 +42,7 @@ add_service_files(
    SetInitialPose.srv
    SetId.srv
    PrintMass.srv
-   GetMetricPartition.srv
+   # GetMetricPartition.srv
 )
 
 generate_messages(

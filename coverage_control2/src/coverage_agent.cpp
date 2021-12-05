@@ -17,12 +17,12 @@ Agent::Agent(ros::NodeHandle& nh_, const std::string& name_, uint8_t id_) :
 	vl_voronoi_pub = nh.advertise<coverage_control2::HistoryStep>("/visibility_limited_voronoi", 1);
 	state_pub = nh.advertise<AgentStateMsg>("/states", 1);
 	utility_debug_pub = nh.advertise<coverage_control2::UtilityDebug>("/" + name + "/utility_debug", 1);
+	geodesic_partition_pub = nh.advertise<coverage_control2::GeodesicPartition>("/geodesic_partition", 1);
 	debug_sub = nh.subscribe("/debug_continue", 1, &Agent::debug_cb, this);
 	state_sub = nh.subscribe("/states", 10, &Agent::state_cb, this);
 	initPose_service = nh.advertiseService("/" + name + "/set_initial_pose", &Agent::handle_SetInitialPose, this);
 	ready_service = nh.advertiseService("/" + name + "/set_ready", &Agent::handle_SetReady, this);
 	dump_skeleton_service = nh.advertiseService("/" + name + "/dump_skeleton", &Agent::handle_DumpSkeleton, this);
-	metric_partition_service = nh.advertiseService("/" + name + "/metric_partition", &Agent::handle_MetricPartition, this);
 }
 
 Agent::~Agent() { }
@@ -54,13 +54,21 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 	region_boundary = c_bounds;
 	region_holes = c_holes;
 
-	// create_offset_poly_naive(region_boundary, -m_params.physical_radius, inflated_outer_boundary);
-	create_offset_poly_naive(region_boundary, -m_params.physical_radius / 2., inflated_outer_boundary);
+	double metric_resolution = m_params.physical_radius * s_params.sense_fp_phys_rad_scale;
+	create_offset_poly_naive(region_boundary, metric_resolution / 2., inflated_outer_boundary);
+
+	K::FT outer_area, deflated_outer_area;
+	CGAL::area_2(region_boundary.vertices_begin(), region_boundary.vertices_end(), outer_area, K());
+	CGAL::area_2(inflated_outer_boundary.vertices_begin(), 
+				 inflated_outer_boundary.vertices_end(), 
+				 deflated_outer_area, K());
+
+	if (id == 1) 
+		ROS_INFO("Region boundary area: %.3f - Deflated: %.3f", CGAL::to_double(outer_area), 
+																CGAL::to_double(deflated_outer_area));
 
 	if (inflated_outer_boundary.is_clockwise_oriented()) 
 		inflated_outer_boundary.reverse_orientation();
-
-	ROS_INFO("%s - Inflated outer boundary has %d vertices", name.c_str(), (int)inflated_outer_boundary.size());
 
 	Bbox_2 rb_box = region_boundary.bbox();
 	region_boundary_bbox.push_back(Point_2(rb_box.xmin(), rb_box.ymin()));
@@ -115,9 +123,22 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 		}
 
 		Polygon_2 inflated_region_hole_i;
-		// create_offset_poly_naive(region_holes[i], -m_params.physical_radius, inflated_region_hole_i);
-		create_offset_poly_naive(region_holes[i], -m_params.physical_radius / 2., inflated_region_hole_i);
+		create_offset_poly_naive(region_holes[i], -metric_resolution / 2., inflated_region_hole_i);
 		inflated_region_holes.push_back(inflated_region_hole_i);
+
+		K::FT hole_area, inflated_hole_area;
+
+		CGAL::area_2(region_holes[i].vertices_begin(), 
+					 region_holes[i].vertices_end(), 
+					 hole_area, K());
+
+		CGAL::area_2(inflated_region_hole_i.vertices_begin(), 
+					 inflated_region_hole_i.vertices_end(), 
+					 inflated_hole_area, K());
+
+		if (id == 1) 
+			ROS_INFO("Hole area: %.3f - Inflated: %.3f", CGAL::to_double(hole_area), 
+														 CGAL::to_double(inflated_hole_area));
 	}
 
 	for (int i = 0; i < h_count; i++) {
@@ -135,13 +156,23 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 	environment_pl.attach(environment_arr);
 	// environment_pl = new CGAL::Arr_naive_point_location<Arrangement_2>(environment_arr);
 
+	std::cout << name << " - RB BBox: (" << rb_box.xmin() << ", " << rb_box.ymin() << ") - (" 
+										 << rb_box.xmax() << ", " << rb_box.ymax() << ")\n";
+
+	std::cout << name << " - OB BBox: (" << ob_box.xmin() << ", " << ob_box.ymin() << ") - (" 
+										 << ob_box.xmax() << ", " << ob_box.ymax() << ")\n";
+
 	Bbox_2 bbox = actual_region.outer_boundary().bbox();
 	std::cout << name << " - BBox: (" << bbox.xmin() << ", " << bbox.ymin() << ") - (" 
 									  << bbox.xmax() << ", " << bbox.ymax() << ")\n";
 
-	// ROS_INFO("%s - constructing global metric grid...", name.c_str());
-	get_metric_graph(actual_region, m_params.physical_radius * 4., global_metric_grid);
-	// ROS_INFO("%s - constructed global metric grid (%d points)", name.c_str(), (int)global_metric_grid.size());
+	// get_metric_graph(actual_region, m_params.physical_radius * 8., global_metric_grid);
+	// get_metric_graph(actual_region, metric_resolution, global_metric_grid);
+
+	valid_actions.emplace_back(Vector2d(-1., 0.), 1.);
+	valid_actions.emplace_back(Vector2d(0., -1.), 1.);
+	valid_actions.emplace_back(Vector2d(0., 1.), 1.);
+	valid_actions.emplace_back(Vector2d(1., 0.), 1.);
 }
 
 bool Agent::ready() {
@@ -217,6 +248,21 @@ void Agent::select_goal_from_local_frontier(std::vector<UtilityPair>& frontier) 
 }
 
 void Agent::step() {
+	if (b_settings.centroid_alg == CentroidAlgorithm::CONTINUOUS_DIJKSTRA) {
+		BFSAgent self = geodesic_voronoi_partition_discrete();
+
+		// std::map<uint8_t, std::vector<std::pair<double, double> > >
+		std::unordered_map<uint8_t, AgentState>::iterator itr = neighbours.begin();
+		for (; itr != neighbours.end(); itr++) {
+			if (itr->first == id) 
+				continue;
+
+			// ...
+		}
+
+		return;
+	}
+
 	int agents_to_consider = 0;
 	Vector2d total_force(0, 0);
 	std::vector<double> values;
@@ -229,11 +275,6 @@ void Agent::step() {
 	for (; itr != neighbours.end(); itr++) {
 		if (itr->first == id) 
 			continue;
-
-		// Point_2 cgal_point(itr->second.position(0), itr->second.position(1));
-		// auto inside_check = CGAL::oriented_side(cgal_point, current_visibility_poly);
-		// if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-		// 	continue;
 
 		Vector2d r_ij = itr->second.position - position;
 		Vector2d m_ij = (position + itr->second.position) * 0.5;
@@ -313,12 +354,7 @@ void Agent::step() {
 			frontier_focused = true;
 			build_local_skeleton(relevantBisectors, frontier_focused);
 		} else if (b_settings.centroid_alg == CentroidAlgorithm::GRID_BASED) {
-			// current_metric_partition = get_metric_partition();
-
-			// ROS_INFO("%s - current metric partition size: %d", name.c_str(), 
-			// 	(int)current_metric_partition.size());
-
-			// Then what?
+			// Now what?
 		}
 	}
 
@@ -366,39 +402,6 @@ void Agent::step() {
 	// 	position += velocity * 0.1;
 
 	// heading = wrapToPi(heading + w * 0.1);
-}
-
-std::vector<Vector2d> Agent::get_metric_partition() {
-	std::vector<Vector2d> partition;
-
-	for (Point_2& gp : global_metric_grid) {
-		Point_2 location(position(0), position(1));
-		double min_dist = a_star_search(location, gp, m_params.physical_radius * 4., 
-										actual_region, false);
-		// double min_dist = a_star_search(location, gp, m_params.physical_radius, 
-		// 								actual_region, false, id == 1);
-		uint8_t min_idx = id;
-
-		std::unordered_map<uint8_t, AgentState>::iterator nb_itr = neighbours.begin();
-		for (; nb_itr != neighbours.end(); nb_itr++) {
-			Point_2 nb_location(nb_itr->second.position(0), nb_itr->second.position(1));
-			double nb_dist = a_star_search(nb_location, gp, m_params.physical_radius * 4., 
-											actual_region, false);
-			// double nb_dist = a_star_search(nb_location, gp, m_params.physical_radius, 
-			// 								actual_region, false, nb_itr->first == 1);
-
-			if (min_dist == -1 || min_dist > nb_dist) {
-				min_idx = nb_itr->first;
-				min_dist = nb_dist;
-			}
-		}
-
-		partition.push_back(Vector2d(CGAL::to_double(gp.x()), CGAL::to_double(gp.y())));
-		ROS_INFO("%s - Added (%.3f, %.3f)", name.c_str(), CGAL::to_double(gp.x()), 
-														  CGAL::to_double(gp.y()));
-	}
-
-	return partition;
 }
 
 Vector2d Agent::compute_geodesic_vector() {
@@ -581,7 +584,10 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 	std::vector<Point_2> metric_graph_points;
 
 	if (frontierFocus) {
-		get_metric_graph(current_work_region, m_params.physical_radius * 4., metric_graph_points);
+		// get_metric_graph(current_work_region, m_params.physical_radius * 4., metric_graph_points);
+		get_metric_graph(current_work_region, 
+						 m_params.physical_radius * s_params.sense_fp_phys_rad_scale, 
+						 metric_graph_points);
 
 		size_t i = 0;
 		for (Point_2& mgp : metric_graph_points) {
@@ -887,7 +893,6 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 			Vector2d p_intr = A_intr.colPivHouseholderQr().solve(b_intr);
 			Point_2 cgal_point(p_intr(0), p_intr(1));
 
-			// auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
 			auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary_bbox);
 			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 				continue;
@@ -935,7 +940,6 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 			Vector2d p_intr = A_intr.colPivHouseholderQr().solve(b_intr);
 			Point_2 cgal_point(p_intr(0), p_intr(1));
 
-			// auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary);
 			auto inside_check = CGAL::oriented_side(cgal_point, inflated_outer_boundary_bbox);
 			if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 				continue;
@@ -952,8 +956,6 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 	}
 
 	// Outer boundary vertices
-	// VertexIterator bnd_v_itr = region_boundary.vertices_begin();
-	// for (; bnd_v_itr != region_boundary.vertices_end(); bnd_v_itr++) {
 	VertexIterator bnd_v_itr = region_boundary_bbox.vertices_begin();
 	for (; bnd_v_itr != region_boundary_bbox.vertices_end(); bnd_v_itr++) {
 		Vector2d vertex(CGAL::to_double(bnd_v_itr->x()), 
@@ -1023,15 +1025,101 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 	}
 }
 
-void Agent::geodesic_voronoi_partition_discrete() {
-	// std::unordered_map<uint8_t, BFSAgent> bfs_agents;
+BFSAgent Agent::geodesic_voronoi_partition_discrete() {
+	std::unordered_map<uint8_t, BFSAgent> bfs_agents;
+	std::map<std::pair<double, double>, uint8_t> metric_assignment;
 
-	// for (std::unordered_map<uint8_t, AgentState>& nb_entry : neighbours) {
-	// 	bfs_agents[nb_entry.first] = BFSAgent(nb_entry.first, 
-	// 										  nb_entry.second.position, );
-	// }
+	double metric_resolution = m_params.physical_radius * s_params.sense_fp_phys_rad_scale;
 
-	// auto check_emptiness = [&] ()
+	for (std::pair<uint8_t, AgentState> nb_entry : neighbours) {
+		Vector2d nb_grid_pos(metric_rounding(nb_entry.second.position(0), metric_resolution), 
+							 metric_rounding(nb_entry.second.position(1), metric_resolution));
+
+		bfs_agents[nb_entry.first] = BFSAgent(nb_entry.first, 
+											  nb_entry.second.position, 
+											  nb_grid_pos, 
+											  metric_resolution);
+	}
+
+	Vector2d self_grid_pos(metric_rounding(position(0), metric_resolution), 
+						   metric_rounding(position(1), metric_resolution));
+
+	bfs_agents[id] = BFSAgent(id, position, self_grid_pos, metric_resolution);
+
+	auto check_emptiness = [&bfs_agents] () {
+		for (auto& entry : bfs_agents) {
+			if (entry.second.frontier.size() > 0) 
+				return false;
+		}
+
+		return true;
+	};
+
+	size_t nAgents = bfs_agents.size();
+	while (!check_emptiness()) {
+		std::set<DeletionUpdate> deletion_updates;
+
+		for (auto& entry : bfs_agents) {
+			std::set<std::pair<double, double> > expansions = entry.second.frontier_expand(valid_actions, actual_region);
+			std::set<std::pair<double, double> >::iterator e_itr = expansions.begin();
+			for (; e_itr != expansions.end(); e_itr++) {
+				std::map<std::pair<double, double>, uint8_t>::iterator ma_itr = metric_assignment.find(*e_itr);
+
+				if (ma_itr == metric_assignment.end()) {
+					metric_assignment[*e_itr] = entry.first;
+				} else {
+					deletion_updates.insert(std::make_pair(ma_itr->first, entry.first));
+				}
+			}
+		}
+
+		for (size_t i = 1; i < nAgents; i++) {
+			for (size_t j = i + 1; j <= nAgents; j++) {
+				std::set<std::pair<double, double> > frontier_intr;
+
+				std::set_intersection(bfs_agents[i].frontier.begin(), bfs_agents[i].frontier.end(), 
+									  bfs_agents[j].frontier.begin(), bfs_agents[j].frontier.end(), 
+									  std::inserter(frontier_intr, frontier_intr.begin()));
+
+				std::set<std::pair<double, double> >::iterator mg_itr = frontier_intr.begin();
+				for (; mg_itr != frontier_intr.end(); mg_itr++) {
+					deletion_updates.insert(std::make_pair(*mg_itr, i));
+					deletion_updates.insert(std::make_pair(*mg_itr, j));
+
+					std::pair<double, double> parent_of_deletion_i = bfs_agents[i].parents[*mg_itr];
+					std::pair<double, double> parent_of_deletion_j = bfs_agents[j].parents[*mg_itr];
+
+					bfs_agents[i].add_border_info(parent_of_deletion_i, j);
+					bfs_agents[j].add_border_info(parent_of_deletion_j, i);
+				}
+			}
+		}
+
+		std::set<DeletionUpdate>::iterator del_itr = deletion_updates.begin();
+		for (; del_itr != deletion_updates.end(); del_itr++) {
+			bfs_agents[del_itr->second].frontier.erase(del_itr->first);
+			std::pair<double, double> parent_of_deletion = bfs_agents[del_itr->second].parents[del_itr->first];
+			bfs_agents[del_itr->second].add_border_info(parent_of_deletion, metric_assignment[del_itr->first]);
+		}
+	}
+
+	int mass_discrete = 0;
+	coverage_control2::GeodesicPartition partition_msg;
+	partition_msg.id = id;
+
+	for (std::pair<std::pair<double, double>, uint8_t> entry : metric_assignment) {
+		if (entry.second == id) {
+			mass_discrete++;
+			partition_msg.xcoords.push_back(entry.first.first);
+			partition_msg.ycoords.push_back(entry.first.second);
+		}
+	}
+
+	geodesic_partition_pub.publish(partition_msg);
+
+	ROS_INFO("%s - Discrete mass = %d", name.c_str(), mass_discrete);
+
+	return bfs_agents[id];
 }
 
 void Agent::debug_cb(const std_msgs::Empty::ConstPtr& msg) {
@@ -1101,36 +1189,6 @@ bool Agent::handle_DumpSkeleton(std_srvs::Trigger::Request& req, std_srvs::Trigg
 		ROS_ERROR("%s could not dump skeleton - %s !", name.c_str(), e.what());
 		res.success = false;
 		res.message = "FAIL";
-		return false;
-	}
-}
-
-bool Agent::handle_MetricPartition(GetMetricPartition::Request& req, GetMetricPartition::Response& res) {
-	try {
-		current_metric_partition = get_metric_partition();
-
-		ROS_INFO("%s - current metric partition size: %d", name.c_str(), 
-			(int)current_metric_partition.size());
-
-		for (Vector2d& mpv : current_metric_partition) {
-			geometry_msgs::Point mpp;
-			mpp.x = mpv(0);
-			mpp.y = mpv(1);
-
-			res.partition.push_back(mpp);
-		}
-
-		if (current_metric_partition.size() == 0) {
-			ROS_WARN("%s has sent empty metric partition!", name.c_str());
-		} else {
-			ROS_INFO("%s has sent it's metric partition.", name.c_str());
-		}
-
-		res.success = true;
-		return true;
-	} catch(std::exception& e) {
-		ROS_ERROR("%s could not send metric partition - %s !", name.c_str(), e.what());
-		res.success = false;
 		return false;
 	}
 }

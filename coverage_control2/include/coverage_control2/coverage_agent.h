@@ -28,8 +28,6 @@ class Agent {
 		void step();
 
 	private:
-		std::vector<Vector2d> get_metric_partition();
-
 		Vector2d compute_geodesic_vector();
 
 		void visibility_polygon();
@@ -49,7 +47,7 @@ class Agent {
 								  VectorXd& b, 
 								  std::vector<BoundarySegment>& outRelevantBisectors);
 
-		void geodesic_voronoi_partition_discrete();
+		BFSAgent geodesic_voronoi_partition_discrete();
 
 		void debug_cb(const std_msgs::Empty::ConstPtr& msg);
 		void state_cb(const AgentStateMsg::ConstPtr& msg);
@@ -57,7 +55,6 @@ class Agent {
 		bool handle_SetInitialPose(SetInitialPose::Request& req, SetInitialPose::Response& res);
 		bool handle_SetReady(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 		bool handle_DumpSkeleton(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-		bool handle_MetricPartition(GetMetricPartition::Request& req, GetMetricPartition::Response& res);
 
 		ros::NodeHandle nh;
 		ros::Publisher vpoly_pub;
@@ -65,12 +62,12 @@ class Agent {
 		ros::Publisher vl_voronoi_pub;
 		ros::Publisher state_pub;
 		ros::Publisher utility_debug_pub;
+		ros::Publisher geodesic_partition_pub;
 		ros::Subscriber debug_sub;
 		ros::Subscriber state_sub;
 		ros::ServiceServer initPose_service;
 		ros::ServiceServer ready_service;
 		ros::ServiceServer dump_skeleton_service;
-		ros::ServiceServer metric_partition_service;
 
 		std::unordered_map<uint8_t, AgentState> neighbours;
 
@@ -94,6 +91,7 @@ class Agent {
 		SensingParameters s_params;
 		BehaviourSettings b_settings;
 		uint16_t sample_count;
+		std::vector<MoveAction> valid_actions;
 
 		Polygon_2 region_boundary;
 		Polygon_2 region_boundary_bbox;
@@ -118,7 +116,6 @@ class Agent {
 		SsPtr current_skeleton;
 
 		std::vector<Point_2> global_metric_grid;
-		std::vector<Vector2d> current_metric_partition;
 };
 
 #endif // DIST_COVERAGE_AGENT_H

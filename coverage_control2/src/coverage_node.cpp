@@ -83,9 +83,8 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-	agent.set_task_region_from_raw(exp_region, exp_obstacles);
-
 	if (node.getParam("/sensing_params", sensing_params)) {
+		s_params.sense_fp_phys_rad_scale = sensing_params["sense_fp_phys_rad_scale"];
 		s_params.sigma_local = sensing_params["sigma_local"];
 		s_params.sense_radius = sensing_params["sense_radius"];
 		s_params.hfov_range = deg2rad(sensing_params["hfov_range_deg"]);
@@ -126,6 +125,8 @@ int main(int argc, char **argv) {
 	// } else {
 	// 	// ...
 	// }
+
+	agent.set_task_region_from_raw(exp_region, exp_obstacles);
 
 	ros::Rate rate(frequency);
 	ROS_INFO("%s will loop at %f Hz.", node_name.c_str(), frequency);

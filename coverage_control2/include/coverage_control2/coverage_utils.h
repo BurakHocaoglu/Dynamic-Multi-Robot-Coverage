@@ -18,7 +18,7 @@
 #include <coverage_control2/AgentState.h>
 #include <coverage_control2/SetInitialPose.h>
 #include <coverage_control2/UtilityDebug.h>
-#include <coverage_control2/GetMetricPartition.h>
+#include <coverage_control2/GeodesicPartition.h>
 
 #include <iostream>
 #include <cstdio>
@@ -59,9 +59,6 @@
 #include <boost/geometry/geometries/point.hpp>
 #include <boost/geometry/index/rtree.hpp>
 
-// #include "coverage_control2/geodesic_center.hpp"
-
-// #include "draw_polygon_with_holes_2.h"
 #include "dump_to_eps.h"
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel K;
@@ -125,7 +122,6 @@ typedef std::pair<Vector2d, double> MoveAction;
 
 typedef coverage_control2::AgentState AgentStateMsg;
 typedef coverage_control2::SetInitialPose SetInitialPose;
-typedef coverage_control2::GetMetricPartition GetMetricPartition;
 
 namespace bg = boost::geometry;
 namespace bgi = boost::geometry::index;
@@ -135,13 +131,16 @@ typedef bg::model::box<MGPoint> MGBox;
 typedef std::pair<MGPoint, unsigned> MGValue;
 typedef bgi::rtree<MGValue, bgi::quadratic<16> > MGRTree;
 
+typedef std::pair<std::pair<double, double>, uint8_t> DeletionUpdate;
+
 enum CentroidAlgorithm {
 	UNKNOWN=0,
 	GEOMETRIC=1,
 	GEODESIC_APPROXIMATE=2,
 	GEODESIC_EXACT=3,
 	FRONTIER_FOCUSED=4,
-	GRID_BASED=5
+	GRID_BASED=5,
+	CONTINUOUS_DIJKSTRA=6
 };
 
 struct MotionParameters {
@@ -161,6 +160,7 @@ struct MotionParameters {
 };
 
 struct SensingParameters {
+	double sense_fp_phys_rad_scale;
 	double sigma_local;
 	double sense_radius;
 	double hfov_range;
@@ -210,43 +210,16 @@ struct BFSAgent {
 	double step_size;
 	std::set<std::pair<double, double> > visited;
 	std::set<std::pair<double, double> > frontier;
+	std::map<uint8_t, std::vector<std::pair<double, double> > > borders;
+	std::map<std::pair<double, double>, std::pair<double, double> > parents;
 
-	BFSAgent() {}
-	BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size) : 
-		id(_id), p(pos), gp(gpos), step_size(_step_size) {
-			frontier.insert(std::make_pair(gp(0), gp(1)));
-	}
+	BFSAgent();
+	BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size);
+
+	void add_border_info(std::pair<double, double> border_vertex, uint8_t border_to);
 
 	std::set<std::pair<double, double> > frontier_expand(std::vector<MoveAction>& actions, 
-									   Polygon_with_holes_2& context) {
-		if (frontier.size() == 0)
-			return frontier;
-
-		std::set<std::pair<double, double> > next_wave;
-		while (!frontier.empty()) {
-			std::pair<double, double> f_pos = *(frontier.begin());
-			frontier.erase(f_pos);
-			visited.insert(f_pos);
-
-			Vector2d f_pos_v(f_pos.first, f_pos.second);
-			for (MoveAction& act : actions) {
-				Vector2d next_pos = act.first * step_size + f_pos_v;
-
-				auto inside_check = CGAL::oriented_side(Point_2(next_pos(0), next_pos(1)), context);
-				if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-					continue;
-
-				std::pair<double, double> next_pos_key = std::make_pair(next_pos(0), next_pos(1));
-				if (frontier.find(next_pos_key) != frontier.end())
-					continue;
-
-				next_wave.insert(next_pos_key);
-			}
-		}
-
-		frontier = next_wave;
-		return frontier;
-	}
+														 Polygon_with_holes_2& context);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -270,6 +243,15 @@ struct Vector2dHash : std::unary_function<T, size_t> {
 };
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// Copied from
+// https://stackoverflow.com/questions/1903954/is-there-a-standard-sign-function-signum-sgn-in-c-c
+template <typename T> 
+inline int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+}
+// ---------------------------------------------------------------------------------------------
+
 struct Vector2dComp {
 	bool operator() (const Vector2d& lhs, const Vector2d& rhs) const {
 		if (lhs(0) != rhs(0))
@@ -279,6 +261,10 @@ struct Vector2dComp {
 		}
 	}
 };
+
+inline double metric_rounding(double value, double factor) {
+	return value - std::remainder(value, factor);
+}
 
 void get_metric_graph(Polygon_with_holes_2& polygon, double resolution, 
 					  std::vector<Point_2>& outPoints);
@@ -343,13 +329,15 @@ inline void create_offset_poly_naive(Polygon_2& in_poly, double l, Polygon_2& ou
 		int j = (i - 1 + nVertices) % nVertices;
 		int k = (i + 1) % nVertices;
 
-		Vector_2 v1(in_poly[k], in_poly[i]);
-		Vector_2 v2(in_poly[j], in_poly[i]);
+		Vector_2 v1(in_poly[i], in_poly[k]); // forward
+		Vector_2 v2(in_poly[i], in_poly[j]); // backward
+		double coeff = CGAL::to_double(v1.x() * v2.y()) - CGAL::to_double(v2.x() * v1.y());
+
 		Vector_2 d = v1 + v2;
 		double norm = sqrt(pow(CGAL::to_double(d.x()), 2) + pow(CGAL::to_double(d.y()), 2));
 		d /= norm;
 
-		out_poly.push_back(in_poly[i] + l * d);
+		out_poly.push_back(in_poly[i] + l * d * sgn<double>(coeff));
 	}
 }
 
@@ -438,6 +426,9 @@ inline CentroidAlgorithm getAlgFromString(const std::string& s) {
 
 	else if (s.compare("grid_based") == 0) 
 		return CentroidAlgorithm::GRID_BASED;
+
+	else if (s.compare("continuous_dijkstra") == 0) 
+		return CentroidAlgorithm::CONTINUOUS_DIJKSTRA;
 
 	else 
 		return CentroidAlgorithm::UNKNOWN;

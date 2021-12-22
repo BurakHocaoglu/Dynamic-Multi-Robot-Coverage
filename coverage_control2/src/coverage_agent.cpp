@@ -6,7 +6,8 @@ Agent::Agent(ros::NodeHandle& nh_, const std::string& name_, uint8_t id_) :
 	id(id_), 
 	is_ready(false), 
 	debug_step(false), 
-	sample_count(30)
+	sample_count(30), 
+	process_steps(0)
 {
 	position << 0.0, 0.0;
 	velocity << 0.0, 0.0;
@@ -56,6 +57,7 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 
 	double metric_resolution = m_params.physical_radius * s_params.sense_fp_phys_rad_scale;
 	create_offset_poly_naive(region_boundary, metric_resolution / 2., inflated_outer_boundary);
+	// create_offset_poly_naive(region_boundary, -metric_resolution / 2., inflated_outer_boundary);
 
 	K::FT outer_area, deflated_outer_area;
 	CGAL::area_2(region_boundary.vertices_begin(), region_boundary.vertices_end(), outer_area, K());
@@ -123,6 +125,7 @@ void Agent::set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_hol
 		}
 
 		Polygon_2 inflated_region_hole_i;
+		// create_offset_poly_naive(region_holes[i], metric_resolution / 2., inflated_region_hole_i);
 		create_offset_poly_naive(region_holes[i], -metric_resolution / 2., inflated_region_hole_i);
 		inflated_region_holes.push_back(inflated_region_hole_i);
 
@@ -198,6 +201,19 @@ bool Agent::is_point_valid(const Vector2d& p) {
 	return is_point_valid(Point_2(p(0), p(1)));
 }
 
+bool Agent::is_point_valid_compact(const Point_2& p) {
+	auto inside_check = CGAL::oriented_side(p, actual_region);
+	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+		return false;
+
+	return true;
+	// return inside_check == CGAL::ON_ORIENTED_BOUNDARY || inside_check == CGAL::POSITIVE;
+}
+
+bool Agent::is_point_valid_compact(const Vector2d& p) {
+	return is_point_valid_compact(Point_2(p(0), p(1)));
+}
+
 void Agent::broadcast() {
 	AgentStateMsg current_state;
 	current_state.id = id;
@@ -216,6 +232,12 @@ void Agent::broadcast() {
 
 	state_pub.publish(current_state);
 }
+
+// void Agent::start_motion_timer() {
+// 	goal = position;
+// 	motion_timer = nh.createTimer(ros::Duration(m_params.delta_t), &Agent::timer_Motion, this);
+// 	ROS_INFO("Agent %s has started its motion timer.", name.c_str());
+// }
 
 double Agent::calculate_workload() {
 	double negative_workload = 0.;
@@ -247,29 +269,64 @@ void Agent::select_goal_from_local_frontier(std::vector<UtilityPair>& frontier) 
 	goal = min_elem_itr->second;
 }
 
-void Agent::step() {
-	if (b_settings.centroid_alg == CentroidAlgorithm::CONTINUOUS_DIJKSTRA) {
-		BFSAgent self = geodesic_voronoi_partition_discrete();
+Vector2d Agent::calculate_geodesic_orientation(std::pair<double, double> v, BFSAgent& agent) {
+	bool geodesically_found = false;
+	auto geodesic_visible = CGAL::oriented_side(Point_2(v.first, v.second), current_visibility_poly);
+	std::pair<double, double> subgoal_key = std::make_pair(v.first, v.second);
 
-		// std::map<uint8_t, std::vector<std::pair<double, double> > >
-		std::unordered_map<uint8_t, AgentState>::iterator itr = neighbours.begin();
-		for (; itr != neighbours.end(); itr++) {
-			if (itr->first == id) 
-				continue;
+	while (true) {
+		geodesic_visible = CGAL::oriented_side(Point_2(v.first, v.second), current_visibility_poly);
 
-			// ...
+		// if (geodesic_visible == CGAL::ON_ORIENTED_BOUNDARY || 
+		// 	geodesic_visible == CGAL::POSITIVE) {
+		if (geodesic_visible == CGAL::POSITIVE) {
+			geodesically_found = true;
+			break;
 		}
 
+		if (agent.is_root(v)) {
+			geodesically_found = false;
+			break;
+		}
+
+		subgoal_key = v;
+		v = agent.parents[v];
+	}
+
+	if (geodesically_found) {
+		// Direct
+		// geodesic_orientation = Vector2d(subgoal_key.first - position(0), 
+		// 								subgoal_key.second - position(1));
+
+		// Visibility-based
+		return Vector2d(v.first - position(0), v.second - position(1));
+	} else {
+		ROS_WARN("%s - could not geodesically find it's target.", name.c_str());
+		// Direct
+		// geodesic_orientation = Vector2d(v_temp.first - position(0), 
+		// 								v_temp.second - position(1));
+
+		// Visibility-based
+		return Vector2d(subgoal_key.first - position(0), subgoal_key.second - position(1));
+	}
+}
+
+void Agent::step() {
+	visibility_polygon();
+
+	if (b_settings.centroid_alg == CentroidAlgorithm::CONTINUOUS_DIJKSTRA) {
+		std::unordered_map<uint8_t, BFSAgent> bfs_agents;
+		BFSAgent self = geodesic_voronoi_partition_discrete(bfs_agents);
 		return;
 	}
 
-	int agents_to_consider = 0;
 	Vector2d total_force(0, 0);
+	int agents_to_consider = 0;
 	std::vector<double> values;
 	std::vector<Vector2d> constraints;
 	std::vector<BoundarySegment> neighbour_segments;
 
-	visibility_polygon();
+	// visibility_polygon();
 
 	std::unordered_map<uint8_t, AgentState>::iterator itr = neighbours.begin();
 	for (; itr != neighbours.end(); itr++) {
@@ -358,43 +415,66 @@ void Agent::step() {
 		}
 	}
 
-	if (b_settings.stationary) 
-		return;
+	force_exerted_on_self = total_force;
 
-	if (!is_point_valid(goal)) {
-		ROS_WARN("%s - would move towards an invalid goal!", name.c_str());
-	}
+	// if (!is_point_valid_compact(goal)) {
+	// 	ROS_WARN("%s - would move towards an invalid goal!", name.c_str());
+	// 	goal = position;
+	// 	return;
+	// }
+}
 
-	// if (frontier_focused) {
-	// 	Vector2d mean_goal(0., 0.);
-	// 	mean_goal = std::accumulate(goal_history.begin(), goal_history.end(), mean_goal);
+void Agent::control_step() {
+	// goal = position + force_exerted_on_self;
 
-	// 	if (id == 1)
-	// 		std::cout << "Mean goal: (" << mean_goal(0) << ", " << mean_goal(1) << ")\n";
+	// if (!is_point_valid_compact(goal)) {
+	// 	ROS_WARN("%s - would move towards an invalid goal!", name.c_str());
+	// 	// goal = position;
+	// 	return;
+	// }
 
-	// 	total_force += m_params.K_goal * (mean_goal / ((double)goal_history.size()) - position);
-	// } else 
-	// 	total_force += m_params.K_goal * (goal - position);
+	// Vector2d total_force = m_params.K_goal * (goal - position);
+	// control_step(total_force);
 
-	total_force += m_params.K_goal * (goal - position);
+	control_step(force_exerted_on_self);
+}
 
-	double mag = total_force.norm();
-	// double ang_diff = wrapToPi(atan2(total_force[1], total_force[0]) - heading);
+void Agent::control_step(Vector2d& force) {
+	double mag = force.norm();
+	ROS_INFO("%s - Force magnitude: %.5f", name.c_str(), mag);
+	// double ang_diff = wrapToPi(atan2(force[1], force[0]) - heading);
 	// double u = m_params.K_linear * mag * cos(ang_diff);
 	// double w = m_params.K_angular * mag * sin(ang_diff);
 
 	// if (fabs(w) > m_params.wmax) 
 	// 	w = copysign(m_params.wmax, w);
 
-	double u = mag;
+	if (b_settings.stationary) 
+		return;
 
-	clip_inplace(u, 0., m_params.umax);
+	if (mag <= 1e-1) 
+		return;
+
+	// double u = mag;
+
+	// clip_inplace(u, 0., m_params.umax);
+
+	double u = std::min({mag, m_params.umax});
 
 	Vector2d hdgVector(cos(heading), sin(heading));
-	velocity = u * hdgVector;
-	velocity = u * total_force / mag;
+	// velocity = u * hdgVector;
+	velocity = u * force / mag;
+
+	// ************
+	goal = position + velocity * m_params.delta_t;
+	if (!is_point_valid_compact(goal)) {
+		ROS_WARN("%s - would move towards an invalid goal!", name.c_str());
+		return;
+	}
+	// ************
 
 	position += velocity * m_params.delta_t;
+	// position += velocity * 0.2;
 	// heading = wrapToPi(heading + w * m_params.delta_t);
 	heading = atan2(velocity(1), velocity(0));
 
@@ -402,12 +482,6 @@ void Agent::step() {
 	// 	position += velocity * 0.1;
 
 	// heading = wrapToPi(heading + w * 0.1);
-}
-
-Vector2d Agent::compute_geodesic_vector() {
-	// ...
-
-	return position;
 }
 
 void Agent::visibility_polygon() {
@@ -755,28 +829,6 @@ void Agent::build_local_skeleton(std::vector<BoundarySegment>& inBisectors, bool
 }
 
 void Agent::compute_geometric_centroid() {
-	// double cx = 0.0, cy = 0.0;
-	// double area = CGAL::to_double(current_work_region.outer_boundary().area());
-
-	// size_t nVertices = current_work_region.outer_boundary().size();
-	// for (size_t i = 0; i < nVertices; i++) {
-	// 	size_t j = (i + 1) % nVertices;
-
-	// 	Point_2 p1 = current_work_region.outer_boundary().vertex(i);
-	// 	Point_2 p2 = current_work_region.outer_boundary().vertex(j);
-
-	// 	cx += (CGAL::to_double(p1.x()) + CGAL::to_double(p2.x())) * 
-	// 	        (CGAL::to_double(p1.x()) * CGAL::to_double(p2.y()) - 
-	// 	         CGAL::to_double(p2.x()) * CGAL::to_double(p1.y()));
-
-	// 	cy += (CGAL::to_double(p1.y()) + CGAL::to_double(p2.y())) * 
-	// 	        (CGAL::to_double(p1.x()) * CGAL::to_double(p2.y()) - 
-	// 	         CGAL::to_double(p2.x()) * CGAL::to_double(p1.y()));
-	// }
-
-	// cx /= 6.0 * area;
-	// cy /= 6.0 * area;
-
 	int count = 0;
 	Vector2d cm_total(0., 0.);
 	double outer_area;
@@ -791,9 +843,6 @@ void Agent::compute_geometric_centroid() {
 		cm_total += holeCm * hole_area;
 		current_workload += hole_area;
 	}
-
-	// current_workload = calculate_workload();
-	// goal = Vector2d(cx, cy);
 
 	goal = cm_total / current_workload;
 }
@@ -1025,8 +1074,7 @@ void Agent::get_voronoi_cell_raw(std::vector<BoundarySegment>& segments,
 	}
 }
 
-BFSAgent Agent::geodesic_voronoi_partition_discrete() {
-	std::unordered_map<uint8_t, BFSAgent> bfs_agents;
+BFSAgent Agent::geodesic_voronoi_partition_discrete(std::unordered_map<uint8_t, BFSAgent>& bfs_agents) {
 	std::map<std::pair<double, double>, uint8_t> metric_assignment;
 
 	double metric_resolution = m_params.physical_radius * s_params.sense_fp_phys_rad_scale;
@@ -1069,6 +1117,17 @@ BFSAgent Agent::geodesic_voronoi_partition_discrete() {
 					metric_assignment[*e_itr] = entry.first;
 				} else {
 					deletion_updates.insert(std::make_pair(ma_itr->first, entry.first));
+
+					std::pair<double, double> parent_of_deletion = entry.second.parents[*e_itr];
+
+					Vector2d outward_normal(e_itr->first - parent_of_deletion.first, 
+											e_itr->second - parent_of_deletion.second);
+
+					entry.second.add_border_info(parent_of_deletion, ma_itr->second);
+					entry.second.normals[parent_of_deletion] = outward_normal;
+
+					bfs_agents[ma_itr->second].add_border_info(*e_itr, entry.first);
+					bfs_agents[ma_itr->second].normals[*e_itr] = - outward_normal;
 				}
 			}
 		}
@@ -1085,12 +1144,6 @@ BFSAgent Agent::geodesic_voronoi_partition_discrete() {
 				for (; mg_itr != frontier_intr.end(); mg_itr++) {
 					deletion_updates.insert(std::make_pair(*mg_itr, i));
 					deletion_updates.insert(std::make_pair(*mg_itr, j));
-
-					std::pair<double, double> parent_of_deletion_i = bfs_agents[i].parents[*mg_itr];
-					std::pair<double, double> parent_of_deletion_j = bfs_agents[j].parents[*mg_itr];
-
-					bfs_agents[i].add_border_info(parent_of_deletion_i, j);
-					bfs_agents[j].add_border_info(parent_of_deletion_j, i);
 				}
 			}
 		}
@@ -1098,14 +1151,14 @@ BFSAgent Agent::geodesic_voronoi_partition_discrete() {
 		std::set<DeletionUpdate>::iterator del_itr = deletion_updates.begin();
 		for (; del_itr != deletion_updates.end(); del_itr++) {
 			bfs_agents[del_itr->second].frontier.erase(del_itr->first);
-			std::pair<double, double> parent_of_deletion = bfs_agents[del_itr->second].parents[del_itr->first];
-			bfs_agents[del_itr->second].add_border_info(parent_of_deletion, metric_assignment[del_itr->first]);
 		}
 	}
 
-	int mass_discrete = 0;
+	int mass_discrete = 0, global_mass_to_share = metric_assignment.size();
 	coverage_control2::GeodesicPartition partition_msg;
 	partition_msg.id = id;
+
+	BFSAgent self = bfs_agents[id];
 
 	for (std::pair<std::pair<double, double>, uint8_t> entry : metric_assignment) {
 		if (entry.second == id) {
@@ -1113,13 +1166,179 @@ BFSAgent Agent::geodesic_voronoi_partition_discrete() {
 			partition_msg.xcoords.push_back(entry.first.first);
 			partition_msg.ycoords.push_back(entry.first.second);
 		}
+
+		bfs_agents[entry.second].discrete_mass += 1.;
 	}
 
 	geodesic_partition_pub.publish(partition_msg);
+	// ROS_INFO("%s - Discrete mass = %.2f", name.c_str(), self.discrete_mass);
+	ROS_INFO("%s - Discrete mass = %d/%.2f", name.c_str(), mass_discrete, self.discrete_mass);
 
-	ROS_INFO("%s - Discrete mass = %d", name.c_str(), mass_discrete);
+	if (self.discrete_mass < mass_discrete)
+		self.discrete_mass = mass_discrete;
 
-	return bfs_agents[id];
+	if (process_steps < 5) {
+		process_steps++;
+		return self;
+	}
+
+	SkeletalGraph skeletal_map(self.discrete_mass);
+	Vector2dHash<Vector2d> vertexHasher;
+
+	for (std::pair<std::pair<double, double>, uint8_t> entry : metric_assignment) {
+		if (entry.second != id) 
+			continue;
+
+		if (self.is_root(entry.first))
+			continue;
+
+		Vector2d v1(entry.first.first, entry.first.second);
+		Vector2d v1p(self.parents[entry.first].first, self.parents[entry.first].second);
+
+		int vid1 = vertexHasher(v1);
+		int vid2 = vertexHasher(v1p);
+
+		Point_2 p1(v1(0), v1(1));
+		Point_2 p2(v1p(0), v1p(1));
+
+		skeletal_map.addEdge(vid1, p1, 1., false, vid2, p2, 1., false);
+	}
+
+	std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
+	target = skeletal_map.getCentroid(stats, true);
+	current_workload = self.discrete_mass;
+	largest_workload = 0.; // Symbolic, has no use
+
+	std::pair<double, double> goal_key = std::make_pair(target(0), target(1));
+	Vector2d geodesic_vector_direct = target - position;
+	Vector2d geodesic_centroid_orientation = calculate_geodesic_orientation(goal_key, self);
+
+	try {
+		
+		Vector2d geodesic_vector(0., 0.);
+		double work_i = self.discrete_mass;
+		// double rate_i = work_i / global_mass_to_share;
+		double rate_i = - global_mass_to_share / work_i;
+		// double rate_i = pow(global_mass_to_share / work_i, 2);
+		// double rate_i = pow(1. / work_i, 2);
+
+		for (std::pair<uint8_t, std::set<std::pair<double, double> > > border : self.borders) {
+			if (border.first == id)
+				continue;
+
+			double work_j = bfs_agents[border.first].discrete_mass;
+			// double rate_j = work_j / global_mass_to_share;
+			double rate_j = - global_mass_to_share / work_j;
+			// double rate_j = pow(global_mass_to_share / work_j, 2);
+			// double rate_j = pow(1. / work_j, 2);
+
+			for (std::pair<double, double> v_border : border.second) {
+				// std::pair<double, double> v_temp = v_border;
+				// std::pair<double, double> subgoal_key = std::make_pair(v_temp.first, v_temp.second);
+
+				// auto geodesic_visible = CGAL::oriented_side(Point_2(v_temp.first, v_temp.second), 
+				// 											current_visibility_poly);
+
+				// bool geodesically_found = false;
+				// while (true) {
+				// 	geodesic_visible = CGAL::oriented_side(Point_2(v_temp.first, v_temp.second), 
+				// 										current_visibility_poly);
+
+				// 	// if (geodesic_visible == CGAL::ON_ORIENTED_BOUNDARY || 
+				// 	// 	geodesic_visible == CGAL::POSITIVE) {
+				// 	if (geodesic_visible == CGAL::POSITIVE) {
+				// 		geodesically_found = true;
+				// 		break;
+				// 	}
+
+				// 	if (self.is_root(v_temp)) {
+				// 		// geodesically_found = true;
+				// 		geodesically_found = false;
+				// 		break;
+				// 	}
+
+				// 	subgoal_key = v_temp;
+				// 	v_temp = self.parents[v_temp];
+				// }
+
+				// Vector2d geodesic_orientation;
+				Vector2d geodesic_orientation = calculate_geodesic_orientation(v_border, self);
+
+				// if (geodesically_found) {
+				// 	// Direct
+				// 	// geodesic_orientation = Vector2d(subgoal_key.first - position(0), 
+				// 	// 								subgoal_key.second - position(1));
+
+				// 	// Visibility-based
+				// 	geodesic_orientation = Vector2d(v_temp.first - position(0), 
+				// 									v_temp.second - position(1));
+				// } else {
+				// 	ROS_WARN("%s - could not geodesically find it's target.", name.c_str());
+				// 	// Direct
+				// 	// geodesic_orientation = Vector2d(v_temp.first - position(0), 
+				// 	// 								v_temp.second - position(1));
+
+				// 	// Visibility-based
+				// 	geodesic_orientation = Vector2d(subgoal_key.first - position(0), 
+				// 									subgoal_key.second - position(1));
+				// }
+
+				geodesic_orientation /= geodesic_orientation.norm();
+				geodesic_vector += (rate_j - rate_i) * geodesic_orientation / self.normals[v_border].norm();
+				// geodesic_vector += (work_j - work_i) * geodesic_orientation / self.normals[v_border].norm();
+			}
+		}
+
+		// force_exerted_on_self = geodesic_vector;
+		// force_exerted_on_self = m_params.K_goal * geodesic_vector;
+		force_exerted_on_self = geodesic_vector.dot(geodesic_vector_direct) * geodesic_centroid_orientation;
+		
+		// -------------------------------------------------------------------------------
+
+		/*
+		SkeletalGraph skeletal_map(self.discrete_mass);
+		Vector2dHash<Vector2d> vertexHasher;
+
+		// int edge_id = 1;
+		for (std::pair<std::pair<double, double>, uint8_t> entry : metric_assignment) {
+			if (entry.second != id)
+				continue;
+
+			if (self.is_root(entry.first))
+				continue;
+
+			Vector2d v1(entry.first.first, entry.first.second);
+			Vector2d v1p(self.parents[entry.first].first, self.parents[entry.first].second);
+
+			int vid1 = vertexHasher(v1);
+			int vid2 = vertexHasher(v1p);
+
+			Point_2 p1(v1(0), v1(1));
+			Point_2 p2(v1p(0), v1p(1));
+
+			skeletal_map.addEdge(vid1, p1, 1., false, vid2, p2, 1., false);
+
+			// std::cout << "Edge[" << edge_id << "]: " << vid1 << " - " << vid2 << std::endl;
+			// edge_id++;
+		}
+
+		// ROS_INFO("%s - created the bfs mesh.", name.c_str());
+
+		std::vector<std::pair<double, size_t> > stats(skeletal_map.getCount());
+		target = skeletal_map.getCentroid(stats, true);
+		current_workload = self.discrete_mass;
+		largest_workload = 0.; // Symbolic, has no use
+
+		std::pair<double, double> goal_key = std::make_pair(target(0), target(1));
+
+		force_exerted_on_self = m_params.K_goal * calculate_geodesic_orientation(goal_key, self);
+		*/
+
+	} catch(std::exception& e) {
+		ROS_ERROR("%s - got the error: %s", name.c_str(), e.what());
+	}
+
+	return self;
 }
 
 void Agent::debug_cb(const std_msgs::Empty::ConstPtr& msg) {
@@ -1192,3 +1411,11 @@ bool Agent::handle_DumpSkeleton(std_srvs::Trigger::Request& req, std_srvs::Trigg
 		return false;
 	}
 }
+
+// void Agent::timer_Motion(const ros::TimerEvent& event) {
+// 	// ROS_INFO("%s motion timer event!", name.c_str());
+
+// 	// Vector2d total_force = m_params.K_goal * (goal - position);
+// 	// control_step(total_force);
+// 	step();
+// }

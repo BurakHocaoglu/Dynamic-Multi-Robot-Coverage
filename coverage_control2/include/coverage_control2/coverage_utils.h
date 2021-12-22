@@ -206,15 +206,19 @@ struct SkeletalNode {
 
 struct BFSAgent {
 	uint8_t id;
-	Vector2d p, gp;
+	Vector2d p, gp, gv;
 	double step_size;
+	double discrete_mass;
 	std::set<std::pair<double, double> > visited;
 	std::set<std::pair<double, double> > frontier;
-	std::map<uint8_t, std::vector<std::pair<double, double> > > borders;
+	std::map<uint8_t, std::set<std::pair<double, double> > > borders;
 	std::map<std::pair<double, double>, std::pair<double, double> > parents;
+	std::map<std::pair<double, double>, Vector2d> normals;
 
 	BFSAgent();
 	BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size);
+
+	bool is_root(std::pair<double, double>& q);
 
 	void add_border_info(std::pair<double, double> border_vertex, uint8_t border_to);
 
@@ -264,6 +268,14 @@ struct Vector2dComp {
 
 inline double metric_rounding(double value, double factor) {
 	return value - std::remainder(value, factor);
+}
+
+inline double rate_derivative_coefficient(double rate, double work) {
+	return - (1. + log(rate)) * rate / work;
+}
+
+inline double saturation(double x) {
+	return (x <= 0.) ? 0. : std::exp(- 1. / (9. * x * x));
 }
 
 void get_metric_graph(Polygon_with_holes_2& polygon, double resolution, 
@@ -433,31 +445,5 @@ inline CentroidAlgorithm getAlgFromString(const std::string& s) {
 	else 
 		return CentroidAlgorithm::UNKNOWN;
 }
-
-// ---------------------------------------------------------------------------------------------
-
-// namespace bg = boost::geometry;
-
-// typedef bg::model::point<double, 2, bg::cs::cartesian> point_t;
-// typedef bg::model::polygon<point_t> polygon_t;
-// typedef bg::model::box<point_t> box_t;
-
-// double getSegDistSq(const point_t& p, const point_t& a, const point_t& b) ;
-
-// double pointToPolygonDist(const point_t& point, const polygon_t& polygon);
-
-// struct Cell {
-//     Cell(const point_t& c_, double h_, const polygon_t& polygon)
-//         : c(c_), h(h_), d(pointToPolygonDist(c, polygon)), max(d + h * std::sqrt(2)) { }
-
-//     point_t c; // cell center
-//     double h; // half the cell size
-//     double d; // distance from cell center to polygon
-//     double max; // max distance to polygon within a cell
-// };
-
-// Cell getCentroidCell(const polygon_t& polygon);
-
-// point_t polylabel(const polygon_t& polygon, double precision = 1., bool debug = false);
 
 #endif // DIST_COVERAGE_UTILS_H

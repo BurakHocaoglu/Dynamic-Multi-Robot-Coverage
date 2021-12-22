@@ -2,23 +2,14 @@
 
 void get_metric_graph(Polygon_with_holes_2& polygon, double resolution, 
 					  std::vector<Point_2>& outPoints) {
-	std::cout << "Resolution: " << resolution << std::endl;
-
 	Bbox_2 bbox = polygon.outer_boundary().bbox();
 
 	for (double xidx = bbox.xmin(); xidx < bbox.xmax(); xidx += resolution) {
 		for (double yidx = bbox.ymin(); yidx < bbox.ymax(); yidx += resolution) {
 			Point_2 p(xidx, yidx);
 
-			// auto inside_check = CGAL::oriented_side(p, polygon);
-			// if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-			// if (inside_check == CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-			// 	continue;
-
 			if (CGAL::oriented_side(p, polygon) == CGAL::POSITIVE) 
 				outPoints.push_back(p);
-
-			// outPoints.push_back(p);
 		}
 	}
 }
@@ -197,14 +188,19 @@ BFSAgent::BFSAgent() {}
 BFSAgent::BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size) : 
 	id(_id), p(pos), gp(gpos), step_size(_step_size) {
 		frontier.insert(std::make_pair(gp(0), gp(1)));
+		visited.insert(std::make_pair(gp(0), gp(1)));
+}
+
+bool BFSAgent::is_root(std::pair<double, double>& q) {
+	return (q.first == gp(0) && q.second == gp(1));
 }
 
 void BFSAgent::add_border_info(std::pair<double, double> border_vertex, uint8_t border_to) {
-	std::map<uint8_t, std::vector<std::pair<double, double> > >::iterator b_itr = borders.find(border_to);
+	std::map<uint8_t, std::set<std::pair<double, double> > >::iterator b_itr = borders.find(border_to);
 	if (b_itr != borders.end()) {
-		b_itr->second.push_back(border_vertex);
+		b_itr->second.insert(border_vertex);
 	} else {
-		borders.insert(std::make_pair(border_to, std::vector<std::pair<double, double> >{border_vertex}));
+		borders.insert(std::make_pair(border_to, std::set<std::pair<double, double> >{border_vertex}));
 	}
 }
 
@@ -217,23 +213,22 @@ std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveA
 	while (!frontier.empty()) {
 		std::set<std::pair<double, double> >::iterator f_pos_itr = frontier.begin();
 		std::pair<double, double> f_pos = *f_pos_itr;
-		visited.insert(f_pos);
+		// visited.insert(f_pos);
 
 		bool expanded = false;
 		Vector2d f_pos_v(f_pos.first, f_pos.second);
 		for (MoveAction& act : actions) {
 			Vector2d next_pos = act.first * step_size + f_pos_v;
 
-			// auto inside_check = CGAL::oriented_side(Point_2(next_pos(0), next_pos(1)), context);
-			// if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
 			if (CGAL::oriented_side(Point_2(next_pos(0), next_pos(1)), context) != CGAL::POSITIVE)
 				continue;
 
 			std::pair<double, double> next_pos_key = std::make_pair(next_pos(0), next_pos(1));
-			if (frontier.find(next_pos_key) != frontier.end())
+			if (visited.find(next_pos_key) != visited.end())
 				continue;
 
 			next_wave.insert(next_pos_key);
+			visited.insert(next_pos_key);
 			parents[next_pos_key] = f_pos;
 			expanded = true;
 		}
@@ -252,9 +247,8 @@ std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveA
 // ---------------------------------------------------------------------------------------------
 
 SkeletalGraph::SkeletalGraph(uint32_t c) {
-	count = c;
-	// graph = MatrixXd::Zero(c, c);
-	graph = MatrixXd::Constant(c, c, std::numeric_limits<int>::max());
+	count = c + 1;
+	graph = MatrixXd::Constant(count, count, std::numeric_limits<int>::max());
 	next_id_available = 0;
 }
 
@@ -267,7 +261,7 @@ int SkeletalGraph::getVertexId(int vid, Point_2 p, double w, bool c) {
 		the_id = next_id_available;
 
 		vertex_map[the_id] = SkeletalNode{c, vid, Vector2d(CGAL::to_double(p.x()), 
-										 				CGAL::to_double(p.y())), w};
+										 				   CGAL::to_double(p.y())), w};
 
 		id_map[vid] = the_id;
 		rid_map[the_id] = vid;
@@ -283,6 +277,7 @@ void SkeletalGraph::addEdge(int vid1, Point_2 p1, double w1, bool c1,
 							int vid2, Point_2 p2, double w2, bool c2) {
 	int id1 = getVertexId(vid1, p1, w1, c1);
 	int id2 = getVertexId(vid2, p2, w2, c2);
+	assert(id1 < count && id2 < count);
 
 	double D = sqrt(pow(CGAL::to_double(p1.x() - p2.x()), 2) + 
 					pow(CGAL::to_double(p1.y() - p2.y()), 2));
@@ -338,8 +333,6 @@ Vector2d SkeletalGraph::getLargestNode(std::vector<std::pair<double, size_t> >& 
 
 	// return vertex_map[outStats[0].second].point;
 	return vertex_map[outStats[k].second].point;
-
-	// return vertex_map[outStats[0].second].point;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -357,6 +350,8 @@ Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& out
 	// 			paths(i, j) = -1;
 	// 	}
 	// }
+
+	assert(count > 0);
 
 	for (int k = 0; k < count; k++) {
 		for (int i = 0; i < count; i++) {
@@ -500,143 +495,3 @@ std::vector<UtilityPair> SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vec
 void SkeletalGraph::assignWeightToVertex(int vid, double w) {
 	vertex_map[vid].weight = w;
 }
-
-// ------------------------------------------------------------------------------------------
-
-// double getSegDistSq(const point_t& p, const point_t& a, const point_t& b) {
-//     double x = a.get<0>();
-//     double y = a.get<1>();
-//     double dx = b.get<0>() - x;
-//     double dy = b.get<1>() - y;
-
-//     if (dx != 0 || dy != 0) {
-//         double t = ((p.get<0>() - x) * dx + (p.get<1>() - y) * dy) / (dx * dx + dy * dy);
-
-//         if (t > 1) {
-//             x = b.get<0>();
-//             y = b.get<1>();
-
-//         } else if (t > 0) {
-//             x += dx * t;
-//             y += dy * t;
-//         }
-//     }
-
-//     dx = p.get<0>() - x;
-//     dy = p.get<1>() - y;
-
-//     return dx * dx + dy * dy;
-// }
-
-// double pointToPolygonDist(const point_t& point, const polygon_t& polygon) {
-//     bool inside = false;
-//     auto minDistSq = std::numeric_limits<double>::infinity();
-
-//     std::size_t i = 0, j, len;
-//     for (std::size_t i = 0, len = polygon.outer().size(), j = len - 1; i < len; j = i++) {
-//         const auto& a = polygon.outer()[i];
-//         const auto& b = polygon.outer()[j];
-
-//         if ((a.get<1>() > point.get<1>()) != (b.get<1>() > point.get<1>()) && 
-//             (point.get<0>() < (b.get<0>() - a.get<0>()) * (point.get<1>() - a.get<1>()) / (b.get<1>() - a.get<1>()) + a.get<0>())) inside = !inside;
-
-//         minDistSq = std::min(minDistSq, getSegDistSq(point, a, b));
-//     }
-
-//     return (inside ? 1 : -1) * std::sqrt(minDistSq);
-// }
-
-// Cell getCentroidCell(const polygon_t& polygon) {
-//     double area = 0.;
-//     point_t c(0., 0.);
-
-//     for (std::size_t i = 0, len = polygon.outer().size(), j = len - 1; i < len; j = i++) {
-//         const point_t& a = polygon.outer()[i];
-//         const point_t& b = polygon.outer()[j];
-//         auto f = a.get<0>() * b.get<1>() - b.get<1>() * a.get<1>();
-//         c.set<0>(c.get<0>() + (a.get<0>() + b.get<0>()) * f);
-//         c.set<1>(c.get<1>() + (a.get<1>() + b.get<1>()) * f);
-//         area += f * 3;
-//     }
-
-//     bg::divide_value(c, area);
-//     return Cell(area == 0 ? polygon.outer()[0] : c, 0, polygon);
-// }
-
-// point_t polylabel(const polygon_t& polygon, double precision, bool debug) {
-//     // find the bounding box of the outer ring
-//     box_t envelope;
-//     bg::envelope(polygon.outer()[0], envelope);
-
-//     point_t size = envelope.max_corner();
-//     bg::subtract_point(size, envelope.min_corner());
-
-//     const double cellSize = std::min(size.get<0>(), size.get<1>());
-//     double h = cellSize / 2.;
-
-//     // a priority queue of cells in order of their "potential" (max distance to polygon)
-//     auto compareMax = [] (const Cell& a, const Cell& b) {
-//         return a.max < b.max;
-//     };
-
-//     using Queue = std::priority_queue<Cell, std::vector<Cell>, decltype(compareMax) >;
-//     Queue cellQueue(compareMax);
-
-//     if (cellSize == 0) {
-//         return envelope.min_corner();
-//     }
-
-//     // cover polygon with initial cells
-//     for (double x = envelope.min_corner().get<0>(); x < envelope.max_corner().get<0>(); x += cellSize) {
-//         for (double y = envelope.min_corner().get<1>(); y < envelope.max_corner().get<1>(); y += cellSize) {
-//             cellQueue.push(Cell(point_t(x + h, y + h), h, polygon));
-//         }
-//     }
-
-//     // take centroid as the first best guess
-//     auto bestCell = getCentroidCell(polygon);
-
-//     point_t temp = envelope.min_corner();
-//     bg::divide_value(size, 2.);
-//     bg::add_point(temp, size);
-
-//     // second guess: bounding box centroid
-//     Cell bboxCell(temp, 0, polygon);
-//     if (bboxCell.d > bestCell.d) {
-//         bestCell = bboxCell;
-//     }
-
-//     auto numProbes = cellQueue.size();
-//     while (!cellQueue.empty()) {
-//         // pick the most promising cell from the queue
-//         auto cell = cellQueue.top();
-//         cellQueue.pop();
-
-//         // update the best cell if we found a better one
-//         if (cell.d > bestCell.d) {
-//             bestCell = cell;
-
-//             if (debug) 
-//                 std::cout << "found best " << ::round(1e4 * cell.d) / 1e4 << " after " << numProbes << " probes" << std::endl;
-//         }
-
-//         // do not drill down further if there's no chance of a better solution
-//         if (cell.max - bestCell.d <= precision) 
-//             continue;
-
-//         // split the cell into four cells
-//         h = cell.h / 2.;
-//         cellQueue.push(Cell(point_t(cell.c.get<0>() - h, cell.c.get<1>() - h), h, polygon));
-//         cellQueue.push(Cell(point_t(cell.c.get<0>() + h, cell.c.get<1>() - h), h, polygon));
-//         cellQueue.push(Cell(point_t(cell.c.get<0>() - h, cell.c.get<1>() + h), h, polygon));
-//         cellQueue.push(Cell(point_t(cell.c.get<0>() + h, cell.c.get<1>() + h), h, polygon));
-//         numProbes += 4;
-//     }
-
-//     if (debug) {
-//         std::cout << "num probes: " << numProbes << std::endl;
-//         std::cout << "best distance: " << bestCell.d << std::endl;
-//     }
-
-//     return bestCell.c;
-// }

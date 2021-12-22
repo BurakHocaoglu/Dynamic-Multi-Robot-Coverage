@@ -194,7 +194,7 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 		# State visualization
 		pos, vel, hdg, goal = state['pos'], state['vel'], state['hdg'], state['goal']
 		robot_color = globals()['__COLORS'][aid]
-		# ax.quiver(pos[0], pos[1], np.cos(hdg), np.sin(hdg), color=robot_color)
+		ax.quiver(pos[0], pos[1], np.cos(hdg), np.sin(hdg), color=robot_color)
 		ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
 		ax.add_artist(plt.Circle(tuple(goal), 1., color=robot_color))
 		x_hist, y_hist = zip(*(globals()["motion_history"][aid]))
@@ -218,7 +218,8 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 		elif globals()["visibility_focus_level"] == 4:
 			gpartition = globals()["all_geodesic_partitions"].get(aid)
 			if gpartition is not None:
-				ax.scatter(gpartition["xcoords"], gpartition["ycoords"], s=8., color=robot_color)
+				ax.scatter(gpartition["xcoords"], gpartition["ycoords"], s=8., 
+							color=robot_color, alpha=0.5)
 
 def customSigIntHandler(signum, frame):
 	# for aid, vlv_history in globals()["all_vlv_history"].items():
@@ -321,7 +322,7 @@ if __name__ == "__main__":
 									   		   S=all_states, 
 									   		   VP=all_vpolygons, 
 									   		   VLV=all_vl_voronoi), 
-									   interval=100)
+									   interval=500)
 
 	rospy.loginfo("Experiment will be visualized, now...")
 	plt.show(block=True)

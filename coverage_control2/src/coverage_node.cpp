@@ -117,19 +117,10 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-	// std::map<std::string, bool> debug_settings;
-	// if (node.getParam("/debug", debug_settings)) {
-	// 	dcfg.exec_time_log = debug_settings["exec_time_log"]
-
-	// 	ROS_INFO("%s retrieved debug logging configuration.", node_name.c_str());
-	// } else {
-	// 	// ...
-	// }
-
 	agent.set_task_region_from_raw(exp_region, exp_obstacles);
 
 	ros::Rate rate(frequency);
-	ROS_INFO("%s will loop at %f Hz.", node_name.c_str(), frequency);
+	ROS_INFO("%s will loop at %.2f Hz [for convergence].", node_name.c_str(), frequency);
 
 	ros::Time warmup_start = ros::Time::now();
 	while (ros::ok() && !agent.ready()) {
@@ -138,19 +129,22 @@ int main(int argc, char **argv) {
 	}
 
 	ROS_INFO("%s has warmed up.", node_name.c_str());
+	// agent.start_motion_timer();
 
-	// std::chrono::high_resolution_clock::time_point cycle_start, cycle_end;
+	std::chrono::high_resolution_clock::time_point cycle_start, cycle_end;
 	while (ros::ok()) {
 		// ros::Time cycle_start = ros::Time::now();
-		// cycle_start = std::chrono::high_resolution_clock::now();
+		cycle_start = std::chrono::high_resolution_clock::now();
 
 		agent.broadcast();
 		agent.step();
+		agent.control_step();
 
 		ros::spinOnce();
-		// cycle_end = std::chrono::high_resolution_clock::now();
+		cycle_end = std::chrono::high_resolution_clock::now();
 		// ROS_INFO("%s - Took: %.5f", node_name.c_str(), (ros::Time::now() - cycle_start).toSec());
 		// ROS_INFO("%s - Took: %ld", node_name.c_str(), std::chrono::duration_cast<std::chrono::microseconds>(cycle_end - cycle_start).count());
+		ROS_INFO("%s - Took: %ld", node_name.c_str(), std::chrono::duration_cast<std::chrono::milliseconds>(cycle_end - cycle_start).count());
 		rate.sleep();
 	}
 

@@ -1,8 +1,7 @@
 #ifndef DIST_COVERAGE_AGENT_H
 #define DIST_COVERAGE_AGENT_H
 
-// #include "coverage_control2/coverage_utils.h"
-#include "coverage_control2/coverage_map.h"
+#include "coverage_control2/coverage_utils.h"
 
 # define nice(os) ((os == CGAL::ON_ORIENTED_BOUNDARY) ? "on boundary" :  \
                    (os == CGAL::POSITIVE) ? "inside" : "outside")
@@ -20,16 +19,20 @@ class Agent {
 		bool ready();
 		bool is_point_valid(const Point_2& p);
 		bool is_point_valid(const Vector2d& p);
+		bool is_point_valid_compact(const Point_2& p);
+		bool is_point_valid_compact(const Vector2d& p);
 
 		void broadcast();
+		// void start_motion_timer();
 		double calculate_workload();
 		void select_goal_from_local_frontier(std::vector<UtilityPair>& frontier);
+		Vector2d calculate_geodesic_orientation(std::pair<double, double> v, BFSAgent& agent);
 
 		void step();
+		void control_step();
+		void control_step(Vector2d& force);
 
 	private:
-		Vector2d compute_geodesic_vector();
-
 		void visibility_polygon();
 		void visibility_limited_voronoi(std::vector<BoundarySegment>& bisectors, 
 										std::vector<UtilityPair>& outFrontier);
@@ -47,7 +50,7 @@ class Agent {
 								  VectorXd& b, 
 								  std::vector<BoundarySegment>& outRelevantBisectors);
 
-		BFSAgent geodesic_voronoi_partition_discrete();
+		BFSAgent geodesic_voronoi_partition_discrete(std::unordered_map<uint8_t, BFSAgent>& bfs_agents);
 
 		void debug_cb(const std_msgs::Empty::ConstPtr& msg);
 		void state_cb(const AgentStateMsg::ConstPtr& msg);
@@ -55,6 +58,10 @@ class Agent {
 		bool handle_SetInitialPose(SetInitialPose::Request& req, SetInitialPose::Response& res);
 		bool handle_SetReady(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 		bool handle_DumpSkeleton(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
+
+		// void timer_Motion(const ros::TimerEvent& event);
+
+		// ros::Timer motion_timer;
 
 		ros::NodeHandle nh;
 		ros::Publisher vpoly_pub;
@@ -74,11 +81,13 @@ class Agent {
 		bool is_ready;
 		bool debug_step;
 		uint8_t id;
+		uint8_t process_steps;
 		std::string name;
 		Vector2d position;
 		Vector2d velocity;
 		Vector2d goal;
 		std::deque<Vector2d> goal_history;
+		Vector2d force_exerted_on_self;
 		Vector2d target;
 		double heading;
 		double current_workload;

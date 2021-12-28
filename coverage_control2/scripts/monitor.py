@@ -322,7 +322,7 @@ if __name__ == "__main__":
 									   		   S=all_states, 
 									   		   VP=all_vpolygons, 
 									   		   VLV=all_vl_voronoi), 
-									   interval=500)
+									   interval=600)
 
 	rospy.loginfo("Experiment will be visualized, now...")
 	plt.show(block=True)

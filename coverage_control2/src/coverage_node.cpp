@@ -129,7 +129,6 @@ int main(int argc, char **argv) {
 	}
 
 	ROS_INFO("%s has warmed up.", node_name.c_str());
-	// agent.start_motion_timer();
 
 	std::chrono::high_resolution_clock::time_point cycle_start, cycle_end;
 	while (ros::ok()) {

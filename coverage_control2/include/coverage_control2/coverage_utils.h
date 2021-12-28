@@ -42,6 +42,8 @@
 
 #include <Eigen/Dense>
 
+// #include "coverage_control2/BFSAgentImproved.h"
+
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Triangular_expansion_visibility_2.h>
 #include <CGAL/Arrangement_2.h>
@@ -143,6 +145,16 @@ enum CentroidAlgorithm {
 	CONTINUOUS_DIJKSTRA=6
 };
 
+enum CentroidalMetric {
+	RADIUS=0,
+	DIAMETER=1,
+	ECCENTRICITY=2,
+	CLOSENESS=3,
+	BETWEENNESS=4,
+	K_AVG_RADIUS=5,
+	K_FURTHEST=6
+};
+
 struct MotionParameters {
 	double delta_t;
 	double attraction_const;
@@ -213,6 +225,7 @@ struct BFSAgent {
 	std::set<std::pair<double, double> > frontier;
 	std::map<uint8_t, std::set<std::pair<double, double> > > borders;
 	std::map<std::pair<double, double>, std::pair<double, double> > parents;
+	std::map<std::pair<double, double>, std::vector<std::pair<double, double> > > edges;
 	std::map<std::pair<double, double>, Vector2d> normals;
 
 	BFSAgent();
@@ -302,7 +315,8 @@ class SkeletalGraph {
 		void refineEdges();
 		Vector2d getLargestNode(std::vector<std::pair<double, size_t> >& outStats);
 		Vector2d getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
-							 bool immediate=false);
+							 CentroidalMetric metric=CentroidalMetric::RADIUS, 
+							 uint8_t k=2, bool immediate=false);
 
 		uint32_t getCount();
 		const std::unordered_map<int, SkeletalNode>& getVertexMap() const;
@@ -318,7 +332,6 @@ class SkeletalGraph {
 		double total_work;
 		int next_id_available;
 		std::unordered_map<int, int> id_map;
-		std::unordered_map<int, int> rid_map;
 		std::unordered_map<int, SkeletalNode> vertex_map;
 };
 

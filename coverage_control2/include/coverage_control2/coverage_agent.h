@@ -23,7 +23,6 @@ class Agent {
 		bool is_point_valid_compact(const Vector2d& p);
 
 		void broadcast();
-		// void start_motion_timer();
 		double calculate_workload();
 		void select_goal_from_local_frontier(std::vector<UtilityPair>& frontier);
 		Vector2d calculate_geodesic_orientation(std::pair<double, double> v, BFSAgent& agent);
@@ -58,10 +57,6 @@ class Agent {
 		bool handle_SetInitialPose(SetInitialPose::Request& req, SetInitialPose::Response& res);
 		bool handle_SetReady(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 		bool handle_DumpSkeleton(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-
-		// void timer_Motion(const ros::TimerEvent& event);
-
-		// ros::Timer motion_timer;
 
 		ros::NodeHandle nh;
 		ros::Publisher vpoly_pub;

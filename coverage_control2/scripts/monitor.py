@@ -89,6 +89,7 @@ def state_cb(msg):
 	globals()["all_states"][msg.id] = {"pos": np.array([msg.position.x, msg.position.y], dtype=float), 
 									   "vel": np.array([msg.velocity.x, msg.velocity.y], dtype=float), 
 									   "goal": np.array([msg.goal.x, msg.goal.y], dtype=float), 
+									   "cntr": np.array([msg.centroid.x, msg.centroid.y], dtype=float), 
 									   "hdg": msg.heading, 
 									   "dom": msg.largest_workload_piece, 
 									   "load": msg.workload}
@@ -193,10 +194,13 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 	for aid, state in S.items():
 		# State visualization
 		pos, vel, hdg, goal = state['pos'], state['vel'], state['hdg'], state['goal']
+		cntr = state['cntr']
 		robot_color = globals()['__COLORS'][aid]
+		cntr_color = globals()['__COLORS'][aid - 1]
 		ax.quiver(pos[0], pos[1], np.cos(hdg), np.sin(hdg), color=robot_color)
 		ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
 		ax.add_artist(plt.Circle(tuple(goal), 1., color=robot_color))
+		ax.add_artist(plt.Circle(tuple(cntr), 1., color=cntr_color))
 		x_hist, y_hist = zip(*(globals()["motion_history"][aid]))
 		ax.plot(x_hist, y_hist, color=robot_color)
 

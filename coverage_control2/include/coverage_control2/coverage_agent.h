@@ -25,11 +25,11 @@ class Agent {
 		void broadcast();
 		double calculate_workload();
 		void select_goal_from_local_frontier(std::vector<UtilityPair>& frontier);
-		Vector2d calculate_geodesic_orientation(std::pair<double, double> v, BFSAgent& agent);
+		Vector2d calculate_geodesic_orientation(std::pair<double, double> v, BFSAgent& agent, double& d);
 
 		void step();
-		void control_step();
-		void control_step(Vector2d& force);
+		void control_step(uint32_t recusrion_count=0);
+		void control_step(Vector2d& force, uint32_t recursion_count=0);
 
 	private:
 		void visibility_polygon();
@@ -81,7 +81,7 @@ class Agent {
 		Vector2d position;
 		Vector2d velocity;
 		Vector2d goal;
-		std::deque<Vector2d> goal_history;
+		// std::deque<Vector2d> goal_history;
 		Vector2d force_exerted_on_self;
 		Vector2d target;
 		double heading;
@@ -119,7 +119,13 @@ class Agent {
 		Polygon_with_holes_2 current_work_region;
 		SsPtr current_skeleton;
 
-		std::vector<Point_2> global_metric_grid;
+		BFSAgent itself;
+		std::vector<Vector2d> centroid_path;
+
+		Bbox_2 actual_region_bbox;
+
+		// std::vector<Point_2> global_metric_grid;
+		// MGRTree global_metric_nn_rtree;
 };
 
 #endif // DIST_COVERAGE_AGENT_H

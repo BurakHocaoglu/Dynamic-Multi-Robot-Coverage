@@ -136,7 +136,7 @@ typedef bgi::rtree<MGValue, bgi::quadratic<16> > MGRTree;
 typedef std::pair<std::pair<double, double>, uint8_t> DeletionUpdate;
 
 enum CentroidAlgorithm {
-	UNKNOWN=0,
+	UNKNOWN_ALG=0,
 	GEOMETRIC=1,
 	GEODESIC_APPROXIMATE=2,
 	GEODESIC_EXACT=3,
@@ -146,13 +146,12 @@ enum CentroidAlgorithm {
 };
 
 enum CentroidalMetric {
-	RADIUS=0,
-	DIAMETER=1,
-	ECCENTRICITY=2,
+	UNKNOWN_MTR=0,
+	RADIUS_MIN_SUM=1,
+	RADIUS_MIN_MAX=2,
 	CLOSENESS=3,
-	BETWEENNESS=4,
-	K_AVG_RADIUS=5,
-	K_FURTHEST=6
+	K_AVG_RADIUS=4,
+	BETWEENNESS=5
 };
 
 struct MotionParameters {
@@ -187,6 +186,8 @@ struct AgentState {
 
 struct BehaviourSettings {
 	CentroidAlgorithm centroid_alg;
+	CentroidalMetric centroid_mtr;
+	int k_avg_count;
 	bool stationary;
 	bool limited_sensing;
 	bool flocking;
@@ -218,15 +219,17 @@ struct SkeletalNode {
 
 struct BFSAgent {
 	uint8_t id;
-	Vector2d p, gp, gv;
+	uint32_t step_count;
 	double step_size;
 	double discrete_mass;
+	Vector2d p, gp, gv;
 	std::set<std::pair<double, double> > visited;
 	std::set<std::pair<double, double> > frontier;
 	std::map<uint8_t, std::set<std::pair<double, double> > > borders;
 	std::map<std::pair<double, double>, std::pair<double, double> > parents;
-	std::map<std::pair<double, double>, std::vector<std::pair<double, double> > > edges;
+	std::map<std::pair<double, double>, std::set<std::pair<double, double> > > edges;
 	std::map<std::pair<double, double>, Vector2d> normals;
+	std::map<std::pair<double, double>, uint32_t> step_counts;
 
 	BFSAgent();
 	BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size);
@@ -283,6 +286,23 @@ inline double metric_rounding(double value, double factor) {
 	return value - std::remainder(value, factor);
 }
 
+inline Vector2d real_2_grid(Vector2d real_pos, Bbox_2 bbox, double resolution) {
+	return Vector2d(std::round((real_pos(0) - bbox.xmin()) / resolution), 
+					std::round((real_pos(1) - bbox.ymin()) / resolution));
+}
+
+// -------------------------------------------------------------------------------------------------
+inline Vector2d grid_2_real(std::pair<double, double> grid_pos, Bbox_2 bbox, double resolution) {
+	return Vector2d(grid_pos.first * resolution + bbox.xmin(), 
+					grid_pos.second * resolution + bbox.ymin());
+}
+
+inline Vector2d grid_2_real(Vector2d grid_pos, Bbox_2 bbox, double resolution) {
+	return Vector2d(grid_pos(0) * resolution + bbox.xmin(), 
+					grid_pos(1) * resolution + bbox.ymin());
+}
+// -------------------------------------------------------------------------------------------------
+
 inline double rate_derivative_coefficient(double rate, double work) {
 	return - (1. + log(rate)) * rate / work;
 }
@@ -305,7 +325,7 @@ void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt);
 
 class SkeletalGraph {
 	public:
-		SkeletalGraph(uint32_t c);
+		SkeletalGraph(uint32_t c, uint32_t offset=0);
 
 		int getVertexId(int vid, Point_2 p, double w, bool c);
 		void addEdge(int vid1, Point_2 p1, double w1, bool c1, 
@@ -315,8 +335,8 @@ class SkeletalGraph {
 		void refineEdges();
 		Vector2d getLargestNode(std::vector<std::pair<double, size_t> >& outStats);
 		Vector2d getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
-							 CentroidalMetric metric=CentroidalMetric::RADIUS, 
-							 uint8_t k=2, bool immediate=false);
+							 CentroidalMetric metric=CentroidalMetric::RADIUS_MIN_SUM, 
+							 uint8_t k=2);
 
 		uint32_t getCount();
 		const std::unordered_map<int, SkeletalNode>& getVertexMap() const;
@@ -324,6 +344,8 @@ class SkeletalGraph {
 		std::vector<Point_2> getVerticesAsCgalPoints();
 		std::vector<UtilityPair> getNextToVertexFrom(Vector2d& fromV, Vector2d& toV);
 		void assignWeightToVertex(int vid, double w);
+		Vector2d getNext(Vector2d& start, Vector2d& goal, double& outDist);
+		std::vector<Vector2d> getPathToVertex(Vector2d& start, Vector2d& goal, bool debug=false);
 
 	private:
 		MatrixXd graph;
@@ -333,6 +355,7 @@ class SkeletalGraph {
 		int next_id_available;
 		std::unordered_map<int, int> id_map;
 		std::unordered_map<int, SkeletalNode> vertex_map;
+		std::map<std::pair<double, double>, int> rid_map;
 };
 
 inline void create_poly_from_raw(XmlRpc::XmlRpcValue& data, Polygon_2& out_poly, 
@@ -456,7 +479,27 @@ inline CentroidAlgorithm getAlgFromString(const std::string& s) {
 		return CentroidAlgorithm::CONTINUOUS_DIJKSTRA;
 
 	else 
-		return CentroidAlgorithm::UNKNOWN;
+		return CentroidAlgorithm::UNKNOWN_ALG;
+}
+
+inline CentroidalMetric getMtrFromString(const std::string& s) {
+	if (s.compare("radius_min_sum") == 0)
+		return CentroidalMetric::RADIUS_MIN_SUM;
+
+	else if (s.compare("radius_min_max") == 0)
+		return CentroidalMetric::RADIUS_MIN_MAX;
+
+	else if (s.compare("closeness") == 0) 
+		return CentroidalMetric::CLOSENESS;
+
+	else if (s.compare("k_avg_radius") == 0) 
+		return CentroidalMetric::K_AVG_RADIUS;
+
+	else if (s.compare("betweenness") == 0) 
+		return CentroidalMetric::BETWEENNESS;
+
+	else 
+		return CentroidalMetric::UNKNOWN_MTR;
 }
 
 #endif // DIST_COVERAGE_UTILS_H

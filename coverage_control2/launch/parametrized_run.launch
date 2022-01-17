@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<launch>
+
+	<arg name="count" default="4" />
+	<arg name="prefix" default="gdb -ex run --args" />
+	<arg name="paramFile" default="$(find coverage_control2)/cfg/params.yaml" />
+
+	<rosparam command="load" file="$(arg paramFile)" />
+
+	<!-- Agent nodes -->
+	<include file="$(find coverage_control2)/launch/run_one_agent.launch" 
+		if="$(eval arg('count') - 1 > 0)">
+
+		<arg name="id" value="$(eval arg('count') - 1)"/>
+
+	</include>
+
+	<!-- Monitor node -->
+	<include file="$(find coverage_control2)/launch/run_monitor_only.launch" 
+		if="$(eval arg('count') == 0)">
+
+		<arg name="idx" value="$(eval arg('idx') - 1)"/>
+
+	</include>
+
+</launch>

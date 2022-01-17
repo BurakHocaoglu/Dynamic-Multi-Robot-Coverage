@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<launch>
+
+	<arg name="id" default="1" />
+	<arg name="prefix" default="gdb -ex run --args" />
+	<!-- <arg name="paramFile" default="$(find coverage_control2)/cfg/params.yaml" /> -->
+
+	<!-- <rosparam command="load" file="$(arg paramFile)" /> -->
+
+	<node name="A$(arg id)" pkg="coverage_control2" 
+		type="dist_coverage_node" args="$(arg id)" output="screen" />
+
+</launch>

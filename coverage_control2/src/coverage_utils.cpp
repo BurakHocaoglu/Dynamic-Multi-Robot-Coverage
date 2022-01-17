@@ -187,6 +187,7 @@ void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt) {
 BFSAgent::BFSAgent() {}
 BFSAgent::BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size) : 
 	id(_id), p(pos), gp(gpos), step_size(_step_size) {
+		discrete_mass = 0.;
 		frontier.insert(std::make_pair(gp(0), gp(1)));
 		visited.insert(std::make_pair(gp(0), gp(1)));
 }
@@ -215,9 +216,14 @@ std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveA
 		std::pair<double, double> f_pos = *f_pos_itr;
 		Vector2d f_pos_v(f_pos.first, f_pos.second);
 
-		std::map<std::pair<double, double>, std::vector<std::pair<double, double> > >::iterator e_list_itr = edges.find(f_pos);
+		// std::map<std::pair<double, double>, 
+		// 		 std::vector<std::pair<double, double> > >::iterator e_list_itr = edges.find(f_pos);
+		std::map<std::pair<double, double>, 
+				 std::set<std::pair<double, double> > >::iterator e_list_itr = edges.find(f_pos);
+
 		if (e_list_itr == edges.end()) {
-			edges.insert(std::make_pair(f_pos, std::vector<std::pair<double, double> >()));
+			// edges.insert(std::make_pair(f_pos, std::vector<std::pair<double, double> >()));
+			edges.insert(std::make_pair(f_pos, std::set<std::pair<double, double> >()));
 		}
 
 		// for (MoveAction& act : actions) {
@@ -228,14 +234,21 @@ std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveA
 			if (CGAL::oriented_side(Point_2(next_pos(0), next_pos(1)), context) != CGAL::POSITIVE)
 				continue;
 
+			// auto is_inside = CGAL::oriented_side(Point_2(next_pos(0), next_pos(1)), context);
+			// if (is_inside != CGAL::ON_ORIENTED_BOUNDARY && is_inside != CGAL::POSITIVE)
+			// 	continue;
+
 			std::pair<double, double> next_pos_key = std::make_pair(next_pos(0), next_pos(1));
-			edges[f_pos].push_back(next_pos_key);
+			// edges[f_pos].push_back(next_pos_key);
+			edges[f_pos].insert(next_pos_key);
+			edges[next_pos_key].insert(f_pos);
 
 			if (visited.find(next_pos_key) != visited.end())
 				continue;
 
 			next_wave.insert(next_pos_key);
 			visited.insert(next_pos_key);
+			step_counts[next_pos_key] = step_count + 1;
 			parents[next_pos_key] = f_pos;
 		}
 
@@ -246,14 +259,17 @@ std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveA
 				   next_wave.begin(), next_wave.end(), 
 				   std::inserter(next_frontier, next_frontier.begin()));
 
+	step_count++;
 	frontier = next_frontier;
 	return frontier;
 }
 
 // ---------------------------------------------------------------------------------------------
 
-SkeletalGraph::SkeletalGraph(uint32_t c) {
+SkeletalGraph::SkeletalGraph(uint32_t c, uint32_t offset) {
+	// count = c;
 	count = c + 1;
+	// count = c + offset;
 	graph = MatrixXd::Constant(count, count, std::numeric_limits<int>::max());
 	paths = MatrixXd::Constant(count, count, -1);
 	next_id_available = 0;
@@ -267,8 +283,10 @@ int SkeletalGraph::getVertexId(int vid, Point_2 p, double w, bool c) {
 	if (itr == id_map.end()) {
 		the_id = next_id_available;
 
-		vertex_map[the_id] = SkeletalNode{c, vid, Vector2d(CGAL::to_double(p.x()), 
-										 				   CGAL::to_double(p.y())), w};
+		Vector2d v(CGAL::to_double(p.x()), CGAL::to_double(p.y()));
+		vertex_map[the_id] = SkeletalNode{c, vid, v, w};
+
+		rid_map.insert(std::make_pair(std::make_pair(v(0), v(1)), the_id));
 
 		id_map[vid] = the_id;
 		next_id_available++;
@@ -352,7 +370,7 @@ Vector2d SkeletalGraph::getLargestNode(std::vector<std::pair<double, size_t> >& 
 // Copied from (and modified slightly, for Eigen::Matrix and extra functionality) 
 // https://github.com/vsmolyakov/cpp/blob/master/graphs/apsp_floyd_warshall.cpp
 Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& outStats, 
-									CentroidalMetric metric, uint8_t k_avg, bool immediate) {
+									CentroidalMetric metric, uint8_t k_avg) {
 	assert(count > 0);
 
 	for (int k = 0; k < count; k++) {
@@ -369,28 +387,52 @@ Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& out
 		}
 	}
 
-	auto dists = graph.rowwise().sum();
+	if (metric == CentroidalMetric::RADIUS_MIN_SUM) {
+		auto dists_sum = graph.rowwise().sum();
 
-	// if (immediate) {
-	if (metric == CentroidalMetric::RADIUS) {
 		int min_idx = 0;
-		double min_val = dists(0);
+		double min_val = dists_sum(0);
 		for (size_t i = 1; i < count; i++) {
-			if (min_val > dists(i)) {
-				min_val = dists(i);
+			if (min_val > dists_sum(i)) {
+				min_val = dists_sum(i);
 				min_idx = i;
 			}
 		}
 
 		return vertex_map[min_idx].point;
 	}
-	// else if (metric == CentroidalMetric::DIAMETER) {}
-	// else if (metric == CentroidalMetric::ECCENTRICITY) {}
-	// else if (metric == CentroidalMetric::CLOSENESS) {}
-	// else if (metric == CentroidalMetric::BETWEENNESS) {}
-	// else if (metric == CentroidalMetric::K_AVG_RADIUS) {}
-	// else if (metric == CentroidalMetric::K_FURTHEST) {}
-	else {
+	else if (metric == CentroidalMetric::RADIUS_MIN_MAX) {
+		auto dists_ecc = graph.rowwise().maxCoeff();
+
+		int min_idx = 0;
+		double min_val = dists_ecc(0);
+		for (size_t i = 1; i < count; i++) {
+			if (min_val > dists_ecc(i)) {
+				min_val = dists_ecc(i);
+				min_idx = i;
+			}
+		}
+
+		return vertex_map[min_idx].point;
+	}
+	else if (metric == CentroidalMetric::CLOSENESS) {
+		auto dists_mean = graph.rowwise().mean();
+
+		int max_idx = 0;
+		double max_val = (count - 1.) / dists_mean(0);
+		for (size_t i = 1; i < count; i++) {
+			double val_i = (count - 1.) / dists_mean(i);
+			if (max_val < val_i) {
+				max_val = val_i;
+				max_idx = i;
+			}
+		}
+
+		return vertex_map[max_idx].point;
+	}
+	else if (metric == CentroidalMetric::K_AVG_RADIUS) {
+		auto dists = graph.rowwise().sum();
+
 		for (size_t i = 0; i < count; i++) {
 			outStats[i] = std::make_pair(dists(i), i);
 		}
@@ -400,15 +442,63 @@ Vector2d SkeletalGraph::getCentroid(std::vector<std::pair<double, size_t> >& out
 			return a < b;
 		});
 
-		// double pair_total = outStats[0].first + outStats[1].first;
-		// double triple_total = outStats[0].first + outStats[1].first + outStats[2].first;
+		double k_total = 0.;
+		Vector2d point_total(0., 0.);
+		for (size_t l = 0; l < k_avg; l++) {
+			k_total += outStats[l].first;
+			point_total += outStats[l].first * vertex_map[outStats[l].second].point;
+		}
 
-		// return (outStats[0].first * vertex_map[outStats[0].second].point + 
-		// 		outStats[1].first * vertex_map[outStats[1].second].point) / pair_total;
+		// for (size_t l = 0; l < 4; l++) {
+		// 	Vector2d v = vertex_map[outStats[l].second].point;
+		// 	std::cout << "[" << outStats[0].first << " - (" << v(0) << ", " << v(1) << ")] ";
+		// }
+		// std::cout << std::endl;
 
-		// return (outStats[0].first * vertex_map[outStats[0].second].point + 
-		// 		outStats[1].first * vertex_map[outStats[1].second].point + 
-		// 		outStats[2].first * vertex_map[outStats[2].second].point) / triple_total;
+		return point_total / k_total;
+	}
+	else if (metric == CentroidalMetric::BETWEENNESS) {
+		std::vector<uint32_t> visit_frequency(count, 0);
+
+		// auto UtilityPairCmp = [](UtilityPair p1, UtilityPair p2) { return p1.first < p2.first; };
+
+		// std::set<Vector2d, Vector2dComp> visited;
+		// std::priority_queue<UtilityPair, std::vector<UtilityPair>, 
+		// 					decltype(UtilityPairCmp)> frontier{UtilityPairCmp};
+
+		// std::priority_queue<std::pair<uint32_t, size_t> > visit_frequency;
+
+		for (size_t i = 0; i < count - 1; i++) {
+			for (size_t j = i + 1; j < count; j++) {
+				if (paths(i, j) == i || paths(i, j) == j)
+					continue;
+
+				visit_frequency[paths(i, j)]++;
+			}
+		}
+
+		size_t max_visit_idx = 0;
+		uint32_t max_visit = visit_frequency[0];
+		for (size_t i = 1; i < count; i++) {
+			if (max_visit < visit_frequency[i]) {
+				max_visit = visit_frequency[i];
+				max_visit_idx = i;
+			}
+		}
+
+		return vertex_map[max_visit_idx].point;
+	}
+	else {
+		auto dists = graph.rowwise().sum();
+
+		for (size_t i = 0; i < count; i++) {
+			outStats[i] = std::make_pair(dists(i), i);
+		}
+
+		std::sort(outStats.begin(), outStats.end(), [](std::pair<double, size_t> a, 
+													   std::pair<double, size_t> b) {
+			return a < b;
+		});
 
 		double k_total = 0.;
 		Vector2d point_total(0., 0.);
@@ -470,4 +560,51 @@ std::vector<UtilityPair> SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vec
 
 void SkeletalGraph::assignWeightToVertex(int vid, double w) {
 	vertex_map[vid].weight = w;
+}
+
+Vector2d SkeletalGraph::getNext(Vector2d& start, Vector2d& goal, double& outDist) {
+	int s_id = rid_map[std::make_pair(start(0), start(1))];
+	int g_id = rid_map[std::make_pair(goal(0), goal(1))];
+	int v_id = paths(s_id, g_id);
+
+	outDist = graph(s_id, v_id);
+
+	return vertex_map[v_id].point;
+}
+
+std::vector<Vector2d> SkeletalGraph::getPathToVertex(Vector2d& start, Vector2d& goal, bool debug) {
+	std::map<std::pair<double, double>, int>::iterator s_id_itr = rid_map.find(std::make_pair(start(0), start(1)));
+	std::map<std::pair<double, double>, int>::iterator g_id_itr = rid_map.find(std::make_pair(goal(0), goal(1)));
+
+	if (s_id_itr == rid_map.end())
+		std::cout << "Start position is NOT found!\n";
+
+	if (g_id_itr == rid_map.end())
+		std::cout << "Goal position is NOT found!\n";
+
+	int s_id = rid_map[std::make_pair(start(0), start(1))];
+	int g_id = rid_map[std::make_pair(goal(0), goal(1))];
+
+	if (debug) {
+		Vector2d start_check = vertex_map[s_id].point;
+		Vector2d goal_check = vertex_map[g_id].point;
+		std::cout << "Start: (" << start(0) << ", " << start(1) << ") - "
+				  << "Goal: (" << goal(0) << ", " << goal(1) << ")\n";
+		std::cout << "StartCheck: (" << start_check(0) << ", " << start_check(1) << ") - "
+				  << "GoalCheck: (" << goal_check(0) << ", " << goal_check(1) << ")\n";
+	}
+
+	std::vector<Vector2d> the_path;
+	int t_id = s_id;
+	while (t_id != g_id) {
+		the_path.push_back(vertex_map[t_id].point);
+		t_id = paths(t_id, g_id);
+	}
+
+	if (t_id != g_id)
+		std::cout << "WTF! WTF! WTF!\n";
+
+	the_path.push_back(vertex_map[g_id].point);
+
+	return the_path;
 }

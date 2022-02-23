@@ -23,8 +23,8 @@ from std_srvs.srv import Trigger
 from coverage_control2.msg import AgentState, Polygon, HistoryStep, PolygonWithHoles, GeodesicPartition
 from coverage_control2.srv import SetInitialPose, SetId, PrintMass
 
-__COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0.99,0), (0.99,0,0.99),
-			(0,0.99,0.99), (0.99,0,0.5), (0.99,0.5,0), (0.,0.99,0.5), (0.5,0.5,0.5)]
+__COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.5,0.5,0.5), (0.99,0,0.99),
+			(0,0.99,0.99), (0.99,0,0.5), (0.99,0.5,0), (0.,0.99,0.5), (0.99,0.99,0)]
 
 all_states = dict()
 all_vpolygons = dict()
@@ -33,6 +33,8 @@ all_vl_voronoi = dict()
 motion_history = dict()
 all_vlv_history = dict()
 all_geodesic_partitions = dict()
+
+plotting_title = "Dist. Cov. Experiment"
 
 exp_region = []
 region_patch = None
@@ -95,7 +97,8 @@ def state_cb(msg):
 									   "load": msg.workload}
 
 	if globals()["motion_history"].get(msg.id) is None:
-		globals()["motion_history"][msg.id] = deque(maxlen=100)
+		# globals()["motion_history"][msg.id] = deque(maxlen=100)
+		globals()["motion_history"][msg.id] = deque()
 
 	globals()["motion_history"][msg.id].append(np.array([msg.position.x, msg.position.y], dtype=float))
 
@@ -104,14 +107,14 @@ def vpoly_cb(msg):
 	globals()["all_vpolygons"][msg.id] = plt.Polygon(projected_poly, 
 													 fill=True, 
 													 color=globals()["__COLORS"][msg.id], 
-													 alpha=0.25)
+													 alpha=0.15)
 
 def voronoi_cb(msg):
 	projected_poly = [(v.x, v.y) for v in msg.points]
 	globals()["all_cvx_voronoi"][msg.id] = plt.Polygon(projected_poly, 
 													   fill=True, 
 													   color=globals()["__COLORS"][msg.id], 
-													   alpha=0.25)
+													   alpha=0.15)
 
 def vlv_poly_cb(msg):
 	projected_poly = [(v.x, v.y) for v in msg.cell.outer_boundary.points]
@@ -124,7 +127,7 @@ def vlv_poly_cb(msg):
 		globals()["all_vl_voronoi"][msg.id] = plt.Polygon(projected_poly, 
 														  fill=True, 
 														  color=globals()["__COLORS"][msg.id], 
-														  alpha=0.3)
+														  alpha=0.2)
 
 		if globals()["all_vlv_history"].get(msg.id) is None:
 			globals()["all_vlv_history"][msg.id] = dict()
@@ -181,7 +184,9 @@ def handle_print_mass(req):
 def animate_experiment(i, ax, lims, S, VP, VLV):
 	ax.clear()
 	ax.set_aspect("equal")
-	ax.set_title("Dist. Cov. Experiment")
+	# ax.set_title("Dist. Cov. Experiment")
+	# ax.set_title(globals()["plotting_title"])
+	ax.set_axis_off()
 	ax.set_xlim(lims[0] - 5., lims[2] + 5.)
 	ax.set_ylim(lims[1] - 5., lims[3] + 5.)
 
@@ -194,13 +199,13 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 	for aid, state in S.items():
 		# State visualization
 		pos, vel, hdg, goal = state['pos'], state['vel'], state['hdg'], state['goal']
-		cntr = state['cntr']
+		# cntr = state['cntr']
 		robot_color = globals()['__COLORS'][aid]
-		cntr_color = globals()['__COLORS'][aid - 1]
+		# cntr_color = globals()['__COLORS'][aid - 1]
 		ax.quiver(pos[0], pos[1], np.cos(hdg), np.sin(hdg), color=robot_color)
 		ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
-		ax.add_artist(plt.Circle(tuple(goal), 1., color=robot_color))
-		ax.add_artist(plt.Circle(tuple(cntr), 1., color=cntr_color))
+		# ax.add_artist(plt.Circle(tuple(goal), 2., color=robot_color))
+		# ax.add_artist(plt.Circle(tuple(cntr), 1., color=cntr_color))
 		x_hist, y_hist = zip(*(globals()["motion_history"][aid]))
 		ax.plot(x_hist, y_hist, color=robot_color)
 
@@ -252,6 +257,8 @@ if __name__ == "__main__":
 	vp_vis_focus_service = rospy.Service("/set_vp_vis_focus", SetId, handle_vp_focus)
 	vis_focus_level_service = rospy.Service("/set_vis_focus_level", SetId, handle_vis_level)
 	print_instantaneous_mass = rospy.Service("/print_instantaneous_mass", PrintMass, handle_print_mass)
+
+	plotting_title = rospy.get_param("/plotting_title", "Dist. Cov. Experiment")
 
 	limits = None
 	exp_region = rospy.get_param("/coverage_boundary", [])
@@ -326,7 +333,11 @@ if __name__ == "__main__":
 									   		   S=all_states, 
 									   		   VP=all_vpolygons, 
 									   		   VLV=all_vl_voronoi), 
-									   interval=600)
+									   interval=200,
+									   save_count=50)
+
+	# writervideo = animation.FFMpegWriter(fps=60)
+	# ani_func.save("/home/burak/Desktop/Lloyd_9.avi", writer=writervideo)
 
 	rospy.loginfo("Experiment will be visualized, now...")
 	plt.show(block=True)

@@ -213,29 +213,6 @@ if __name__ == "__main__":
 
 				f_intersection = f_i & f_j
 
-				# f_i_diff_j = f_i - f_j
-				# f_j_diff_i = f_j - f_i
-
-				# for f_vmp in f_i_diff_j:
-				# 	if assignment_updates.get(f_vmp) is None:
-				# 		assignment_updates[f_vmp] = i
-
-				# 	else:
-				# 		assignment_updates[f_vmp] = min(assignment_updates[f_vmp], i)
-				# 		deletion_updates.add((f_vmp, i))
-
-				# -----------------------------------------------------------------------------
-
-				# for f_vmp in f_j_diff_i:
-				# 	if assignment_updates.get(f_vmp) is None:
-				# 		assignment_updates[f_vmp] = j
-
-				# 	else:
-				# 		assignment_updates[f_vmp] = min(assignment_updates[f_vmp], j)
-				# 		deletion_updates.add((f_vmp, j))
-
-				# -----------------------------------------------------------------------------
-
 				for f_vmp in f_intersection:
 					deletion_updates.add((f_vmp, i))
 					deletion_updates.add((f_vmp, j))
@@ -281,7 +258,7 @@ if __name__ == "__main__":
 		mpx, mpy = zip(*partition)
 		ax.scatter(mpx, mpy, s=8, color=__COLORS[k])
 
-		center = np.mean(partition, axis=0)
-		ax.add_artist(plt.Circle(tuple(center), 2., color=__COLORS[k], alpha=0.5))
+		# center = np.mean(partition, axis=0)
+		# ax.add_artist(plt.Circle(tuple(center), 2., color=__COLORS[k], alpha=0.5))
 
 	plt.show()

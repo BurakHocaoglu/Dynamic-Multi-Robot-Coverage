@@ -1,8 +1,24 @@
 # Coverage boundary (~ outer boundary should be simple and counter-clockwise oriented)
 # coverage_boundary: [[80., 80.], [-80., 80.], [-80., -80.], [80., -80.]]
 
+# Irregular convex hexagon for convex diversity
+# coverage_boundary: [[-140., 120.], [-200., 20.], [-200., -40.], [-160., -40.], 
+#                     [-40., 20.], [-60., 100.]]
+
 # Room with obstacles outer boundary
 # coverage_boundary: [[-100., 90.], [-100., -70.], [-20., -70.], [-20., 90.]]
+
+# Triangle
+# coverage_boundary: [[60., 60.], [-60., 23.], [20., -60.]]
+
+# Non-convex
+# coverage_boundary: [[-80., 60.], [-20., 60.], [-20., 40.], [20., 40.], 
+#                     [20., 60.], [80., 60.], [80., 40.], [40., 40.], 
+#                     [40., 20.], [80., 20.], [80., -40.], [40., -40.], 
+#                     [40., -60.], [80., -60.], [80., -80.], [20., -80.], 
+#                     [20., -60.], [-20., -60.], [-20., -80.], [-80., -80.], 
+#                     [-80., -60.], [-40., -60.], [-40., -20.], [0., -20.], 
+#                     [0., 20.], [-80., 20.]]
 
 # Room with all obstacles integrated, but one
 # coverage_boundary: [[-100., 90.], [-100., 70.], [-70., 70.], [-70., 64.], 
@@ -26,6 +42,7 @@
 #                     [260., 60.], [180., 80.], [160., 180.], [320., 160.], 
 #                     [140., 220.], [140., 120.]]
 
+# Call of Ktulhu
 # coverage_boundary: [[20., 140.], [20., 80.], [40., 80.], [20., 60.], 
 #                     [20., -40.], [30., -40.], [30., 60.], [40., 60.], 
 #                     [40., -30.], [50., -30.], [50., 60.], [60., 60.], 
@@ -39,12 +56,12 @@
 # coverage_boundary: [[65., 65.], [40., 15.], [50., 15.], [60., 35.], 
 #                     [70., 35.], [80., 15.], [90., 15.]]
 
-# spiral
-# coverage_boundary: [[120., 140.], [50., 140.], [50., 90.], [115., 90.], 
-#                     [115., 130.], [60., 130.], [60., 100.], [105., 100.], 
-#                     [105., 120.], [70., 120.], [70., 115.], [100., 115.],
-#                     [100., 105.], [65., 105.], [65., 125.], [110., 125.],
-#                     [110., 95.], [55., 95.], [55., 135.], [120., 135.]]
+# Spiral
+coverage_boundary: [[120., 140.], [50., 140.], [50., 90.], [115., 90.], 
+                    [115., 130.], [60., 130.], [60., 100.], [105., 100.], 
+                    [105., 120.], [70., 120.], [70., 115.], [100., 115.],
+                    [100., 105.], [65., 105.], [65., 125.], [110., 125.],
+                    [110., 95.], [55., 95.], [55., 135.], [120., 135.]]
 
 # corridors
 # coverage_boundary: [[-140., 120.], [-200., 120.], [-200., -20.], [-120., -20.], 
@@ -52,11 +69,17 @@
 #                     [100., 100.], [20., 100.], [20., 160.], [-140., 160.]]
 
 # Weird E letter
-coverage_boundary: [[-90., 120.], [-90., 10.], [-10., 10.], [-10., 20.], 
-                    [-80., 20.], [-80., 40.], [-10., 40.], [-10., 60.], 
-                    [-80., 50.], [-80., 70.], [-30., 60.], [-20., 80.], 
-                    [-80., 80.], [-80., 90.], [-10., 90.], [-10., 100.], 
-                    [-80., 100.], [-80., 110.], [-10., 110.], [-10., 120.]]
+# coverage_boundary: [[-90., 120.], [-90., 10.], [-10., 10.], [-10., 20.], 
+#                     [-80., 20.], [-80., 40.], [-10., 40.], [-10., 60.], 
+#                     [-80., 50.], [-80., 70.], [-30., 60.], [-20., 80.], 
+#                     [-80., 80.], [-80., 90.], [-10., 90.], [-10., 100.], 
+#                     [-80., 100.], [-80., 110.], [-10., 110.], [-10., 120.]]
+
+# Weird E letter v2
+# coverage_boundary: [[-30., 50.], [-50., 40.], [-50., -5.], [15., -5.], 
+#                     [-15., 10.], [-40., 10.], [-35., 20.], [25., 20.], 
+#                     [25., 30.], [-40., 30.], [-20., 40.], [25., 40.], 
+#                     [25., 50.]]
 
 # Coverage obstacles should be simple and clockwie oriented
 coverage_obstacles:
@@ -120,7 +143,7 @@ coverage_obstacles:
     #################
 
 motion_params:
-    delta_t: 2.
+    delta_t: 0.2
     attraction_const: 1.
     repulsion_const: 10.
     vmax: 1.
@@ -131,9 +154,9 @@ motion_params:
     safe_radius: 2.
     K_linear: 1.
     K_angular: 1.
-    K_repulsion: 0.
+    K_repulsion: 0.5
     K_attraction: 1.
-    K_goal: 5.
+    K_goal: 1.
 
 sensing_params:
     sense_fp_phys_rad_scale: 4.
@@ -150,10 +173,10 @@ behaviours:
     voronoi: true
 
 # centroid_alg: "frontier_focused"
-# centroid_alg: "geodesic_approximate"
+centroid_alg: "geodesic_approximate"
 # centroid_alg: "geometric"
 # centroid_alg: "grid_based"
-centroid_alg: "continuous_dijkstra"
+# centroid_alg: "continuous_dijkstra"
 
 centroidal_mtr: "radius_min_sum"
 # centroidal_mtr: "radius_min_max"
@@ -163,7 +186,9 @@ centroidal_mtr: "radius_min_sum"
 
 k_avg_count: 3
 
-agent_init_rand_seed: 897435
+plotting_title: "Standard Distributed Lloyd"
+
+agent_init_rand_seed: 49
 
 debug:
     exec_time_log: true

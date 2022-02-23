@@ -2,6 +2,7 @@
 
 import sys
 import time
+import copy
 import json
 import signal
 import threading
@@ -18,17 +19,18 @@ from functools import partial
 from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
 
-__COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0.99,0), (0.99,0,0.99),
-			(0,0.99,0.99), (0.99,0,0.5), (0.99,0.5,0), (0.,0.99,0.5), (0.5,0.5,0.5)]
+__COLORS = [(0,0,0), (0.99,0,0), (0,0.99,0), (0,0,0.99), (0.99,0,0.99), (0,0.99,0.99), 
+			(0.99,0,0.5), (0.99,0.5,0), (0.,0.99,0.5), (0.5,0.5,0.5), (0.99,0.99,0)]
 
 history = None
 limits = None
 stop = False
 region_patch = None
-history_index = 0
-history_length = 0
+region_patch2 = None
+history_index = -1
 history_thread = None
 obstacle_patches = dict()
+obstacle_patches2 = dict()
 
 def get_skeleton(poly, holes=[]):
 	sgp = sg.Polygon(poly)
@@ -146,10 +148,9 @@ def animate_history(i, ax, lims, hist):
 	try:
 		ax.clear()
 		ax.set_aspect("equal")
-		# ax.set_title("Dist. Cov. Experiment")
-		ax.set_xlim(lims[0] - 1., lims[2] + 1.)
-		ax.set_ylim(lims[1] - 1., lims[3] + 1.)
-		ax.set_axis_off()
+		ax.set_title("Dist. Cov. Experiment")
+		ax.set_xlim(lims[0] - 5., lims[2] + 5.)
+		ax.set_ylim(lims[1] - 5., lims[3] + 5.)
 
 		if globals()["region_patch"] is not None:
 			ax.add_patch(globals()["region_patch"])
@@ -168,21 +169,18 @@ def animate_history(i, ax, lims, hist):
 				ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
 				ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3, zorder=2))
 
-				x_hist, y_hist = zip(*(hist_piece["position"][:i + 1]))
-				ax.plot(x_hist, y_hist, color=robot_color)
-
 				for h in holes:
 					# ax.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=0.5, zorder=1))
 					ax.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=1, zorder=1))
 
-				# workloads.append(compute_area_workload(poly, holes))
+				workloads.append(compute_area_workload(poly, holes))
 
-				# skeleton = get_skeleton(poly, holes)
-				# for h in skeleton.halfedges:
-				# 	if h.is_bisector:
-				# 		p1 = h.vertex.point
-				# 		p2 = h.opposite.vertex.point
-				# 		plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+				skeleton = get_skeleton(poly, holes)
+				for h in skeleton.halfedges:
+					if h.is_bisector:
+						p1 = h.vertex.point
+						p2 = h.opposite.vertex.point
+						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
 
 				# for v in skeleton.vertices:
 				# 	plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
@@ -199,19 +197,17 @@ def animate_history(i, ax, lims, hist):
 				# 	mg_b_xs, mg_b_ys = zip(*mg_b)
 				# 	ax.scatter(mg_b_xs, mg_b_ys, s=0.5, color=robot_color)
 
-			# if len(workloads) > 0:
-			# 	std = np.std(workloads)
-			# 	print("Workload Std. - Var.: {} - {}".format(std, std ** 2))
+			if len(workloads) > 0:
+				std = np.std(workloads)
+				print("Workload Std. - Var.: {} - {}".format(std, std ** 2))
 
 	except Exception as e:
 		# raise e
 		print(traceback.format_exc())
 
 def history_iterator(hist):
-	# while not globals()["stop"] and globals()["history_index"] < len(hist):
-	while not globals()["stop"] and globals()["history_index"] < globals()["history_length"]:
-		time.sleep(0.2)
-		print("Done {}".format(globals()["history_index"]))
+	while not globals()["stop"] or globals()["history_index"] < len(hist):
+		time.sleep(0.5)
 		globals()["history_index"] += 1
 
 def customSigintHandler(signum, frame):
@@ -222,6 +218,8 @@ def customSigintHandler(signum, frame):
 
 if __name__ == "__main__":
 	signal.signal(signal.SIGINT, customSigintHandler)
+
+	with_skel = int(sys.argv[2]) == 1
 
 	exp_region = [[80., 80.], [80., -80.], [-80., -80.], [-80., 80.]]
 	# exp_region = [[80., 100.], [80., -40.], [-80., -40.], [-80., 100.]]
@@ -240,8 +238,8 @@ if __name__ == "__main__":
 	# 				[-20., 56.], [-20., 90.], [-56., 90.], [-56., 74.], 
 	# 				[-60., 74.], [-60., 90.]]
 
-	# exp_region = [[-80., 130.], [-80., 10.], [20., 10.], [20., 80.], 
-	# 			[-70., 80.], [-70., 120.], [20., 120.], [20., 130.]]
+	exp_region = [[-80., 130.], [-80., 10.], [20., 10.], [20., 80.], 
+				[-70., 80.], [-70., 120.], [20., 120.], [20., 130.]]
 
 	# exp_region = [[-90., 120.], [-90., 10.], [-10., 10.], [-10., 20.], 
 	# 			[-80., 20.], [-80., 40.], [-10., 40.], [-10., 60.], 
@@ -249,11 +247,35 @@ if __name__ == "__main__":
 	# 			[-80., 80.], [-80., 90.], [-10., 90.], [-10., 100.], 
 	# 			[-80., 100.], [-80., 110.], [-10., 110.], [-10., 120.]]
 
+	# exp_region = np.array([[80., 140.], [120., 100.], [80., 100.], [20., 140.], 
+	# 						[40., 60.], [-40., 40.], [80., -20.], [80., 80.], 
+	# 						[160., -20.], [140., 80.], [300., 20.], [300., 120.], 
+	# 						[260., 60.], [180., 80.], [160., 180.], [320., 160.], 
+	# 						[140., 220.], [140., 120.]])
+
+	# exp_region = [[-140., 120.], [-200., 20.], [-200., -40.], [-160., -40.], [-40., 20.], [-60., 100.]]
+
+	# exp_region = np.array([[60., 60.], [-60., 23.], [20., -60.]])
+
+	# exp_region = np.array([[-90., 120.], [-90., 10.], [-10., 10.], [-10., 20.], 
+	# 						[-80., 20.], [-80., 40.], [-10., 40.], [-10., 60.], 
+	# 						[-80., 50.], [-80., 70.], [-30., 60.], [-20., 80.], 
+	# 						[-80., 80.], [-80., 90.], [-10., 90.], [-10., 100.], 
+	# 						[-80., 100.], [-80., 110.], [-10., 110.], [-10., 120.]])
+
+	# exp_region = np.array([[120., 140.], [50., 140.], [50., 90.], [115., 90.],
+	# 						[115., 130.], [60., 130.], [60., 100.], [105., 100.],
+	# 						[105., 120.], [70., 120.], [70., 115.], [100., 115.],
+	# 						[100., 105.], [65., 105.], [65., 125.], [110., 125.],
+	# 						[110., 95.], [55., 95.], [55., 135.], [120., 135.]])
+
 	xcoords, ycoords = zip(*exp_region)
 	xmin, xmax = min(xcoords), max(xcoords)
 	ymin, ymax = min(ycoords), max(ycoords)
 	limits = (xmin, ymin, xmax, ymax)
+
 	region_patch = plt.Polygon(list(exp_region), fill=False, color=(0., 0., 0.))
+	region_patch2 = plt.Polygon(list(exp_region), fill=False, color=(0., 0., 0.))
 
 	exp_obstacles = dict()
 	# exp_obstacles = {
@@ -275,10 +297,12 @@ if __name__ == "__main__":
 	# }
 	exp_obstacles = {
 		# "obs1": [[60., -60.], [-60., -60.], [-60., 60.], [60., 60.]],
-		# "obs2": [[-70., 70.], [10., 70.], [10., 20.], [-70., 20.]],
+		"obs2": [[-70., 70.], [10., 70.], [10., 20.], [-70., 20.]],
+		# "obs": [[60., -60.], [-60., -60.], [-60., 60.], [60., 60.]],
 	}
 	for obs_name, obs in exp_obstacles.items():
 		obstacle_patches[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
+		obstacle_patches2[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
 
 	with open(sys.argv[1], "r") as H:
 		history = json.load(H)
@@ -287,42 +311,89 @@ if __name__ == "__main__":
 		print("Could not load history content!")
 		sys.exit(1)
 
-	history_length = min([len(hist["position"]) for _, hist in history.items()])
-	print("History length: {}".format(history_length))
+	print("Length: {}".format([len(hist["position"]) for _, hist in history.items()]))
 
-	history_index = 5
-	assert history_index < history_length, "History is not long enough!"
+	# -----------------------------------------------------------------------------------------------
+	print("******************************* START *******************************")
 
-	history_thread = threading.Thread(name="history_iterator", target=history_iterator, args=(history, ))
+	figure1 = plt.figure(num=1)
+	ax1 = figure1.add_subplot(1, 1, 1)
 
-	figure = plt.figure()
-	hist_ax = figure.add_subplot(1, 1, 1)
-	ani_func = animation.FuncAnimation(figure, 
-									   partial(animate_history, 
-									   		   ax=hist_ax, 
-									   		   lims=limits, 
-									   		   hist=history), 
-									   interval=100,
-									   save_count=history_length * 4)
+	N = 600
+	X = np.linspace(xmin - 5., xmax + 5., N)
+	Y = np.linspace(ymin - 5., ymax + 5., N)
+	X, Y = np.meshgrid(X, Y)
 
-	time.sleep(1.)
-	history_thread.start()
+	Sigma = np.array([[200. , 0.], 
+	                  [0.,  200.]])
 
-	# plt.show(block=True)
-	history_writer = animation.PillowWriter(fps=10)
-	# ani_func.save("Experiment.gif", writer=history_writer)
-	ani_func.save("{}.gif".format(sys.argv[2]), writer=history_writer)
+	mvpos = np.empty(X.shape + (2,))
+	mvpos[:, :, 0] = X
+	mvpos[:, :, 1] = Y
 
-	stop = True
-	history_thread.join()
+	ax1.clear()
+	ax1.set_aspect("equal")
+	ax1.set_xlim(limits[0] - 0.5, limits[2] + 0.5)
+	ax1.set_ylim(limits[1] - 0.5, limits[3] + 0.5)
+	ax1.set_axis_off()
 
-	print("FINISH!")
+	if region_patch is not None:
+		ax1.add_patch(region_patch2)
 
-	# ----------------------------------------------------------------
-	# print("******************************* FINAL *******************************")
+	for _, obs_patch in obstacle_patches2.items():
+		ax1.add_patch(obs_patch)
 
-	# figure2 = plt.figure()
-	# ax = figure2.add_subplot(1, 1, 1)
+	if history is not None:
+		workloads = []
+		for aid in range(len(history)):
+			pos = history[str(aid + 1)]["position"][10]
+			poly = history[str(aid + 1)]["polygon"][10]
+			holes = history[str(aid + 1)]["holes"][10]
+			robot_color = __COLORS[aid + 1]
+			ax1.add_artist(plt.Circle(tuple(pos), 2., color=robot_color))
+			ax1.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.2, zorder=2))
+
+			for h in holes:
+				ax1.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=1, zorder=1))
+
+			workloads.append(compute_area_workload(poly, holes))
+
+			# Z = multivariate_gaussian(mvpos, np.array(pos), Sigma) * 1e5
+			# cset = ax1.contourf(X, Y, Z, levels=np.linspace(10., 100., 11), 
+			# 				   cmap=cm.coolwarm, alpha=0.7)
+
+			# skeleton = get_skeleton(poly, holes)
+			# for h in skeleton.halfedges:
+			# 	if h.is_bisector:
+			# 		p1 = h.vertex.point
+			# 		p2 = h.opposite.vertex.point
+			# 		plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+
+			# for v in skeleton.vertices:
+			# 	plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
+			# 										   v.time, color='blue', fill=False))
+
+			# mg_in, mg_b = get_metric_graph(np.array(poly, dtype=float), 
+			# 								[np.array(h, dtype=float) for h in holes])
+
+			# if len(mg_in) > 0:
+			# 	mg_in_xs, mg_in_ys = zip(*mg_in)
+			# 	ax.scatter(mg_in_xs, mg_in_ys, s=0.5, color=robot_color)
+
+			# if len(mg_b) > 0:
+			# 	mg_b_xs, mg_b_ys = zip(*mg_b)
+			# 	ax.scatter(mg_b_xs, mg_b_ys, s=0.5, color=robot_color)
+
+		if len(workloads) > 0:
+			std = np.std(workloads)
+			print("Workload Std. - Var.: {} - {}".format(std, std ** 2))
+
+	plt.savefig('F_h1.png', bbox_inches='tight')
+	# -----------------------------------------------------------------------------------------------
+	print("******************************* FINAL *******************************")
+
+	figure2 = plt.figure(num=2)
+	ax2 = figure2.add_subplot(1, 1, 1)
 
 	# N = 600
 	# X = np.linspace(xmin - 5., xmax + 5., N)
@@ -336,61 +407,68 @@ if __name__ == "__main__":
 	# mvpos[:, :, 0] = X
 	# mvpos[:, :, 1] = Y
 
-	# ax.clear()
-	# ax.set_aspect("equal")
-	# # ax.set_title("Dist. Cov. Experiment")
-	# ax.set_xlim(limits[0] - 5., limits[2] + 5.)
-	# ax.set_ylim(limits[1] - 5., limits[3] + 5.)
+	ax2.clear()
+	ax2.set_aspect("equal")
+	ax2.set_xlim(limits[0] - 0.5, limits[2] + 0.5)
+	ax2.set_ylim(limits[1] - 0.5, limits[3] + 0.5)
+	ax2.set_axis_off()
 
-	# if region_patch is not None:
-	# 	ax.add_patch(region_patch)
+	if region_patch is not None:
+		ax2.add_patch(region_patch)
 
-	# for _, obs_patch in obstacle_patches.items():
-	# 	ax.add_patch(obs_patch)
+	for _, obs_patch in obstacle_patches.items():
+		ax2.add_patch(obs_patch)
 
-	# if history is not None:
-	# 	workloads = []
-	# 	for aid in range(len(history)):
-	# 		pos = history[str(aid + 1)]["position"][-1]
-	# 		poly = history[str(aid + 1)]["polygon"][-1]
-	# 		holes = history[str(aid + 1)]["holes"][-1]
-	# 		robot_color = __COLORS[aid + 1]
-	# 		ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
-	# 		ax.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.3, zorder=2))
+	if history is not None:
+		workloads = []
+		for aid in range(len(history)):
+			pos = history[str(aid + 1)]["position"][-1]
+			poly = history[str(aid + 1)]["polygon"][-1]
+			holes = history[str(aid + 1)]["holes"][-1]
+			robot_color = __COLORS[aid + 1]
+			ax2.add_artist(plt.Circle(tuple(pos), 2., color=robot_color))
+			ax2.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.2, zorder=2))
 
-	# 		for h in holes:
-	# 			ax.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=1, zorder=1))
+			x_hist, y_hist = zip(*(history[str(aid + 1)]["position"]))
+			ax2.plot(x_hist, y_hist, color=robot_color, linewidth=2.)
 
-	# 		workloads.append(compute_area_workload(poly, holes))
+			for h in holes:
+				ax2.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=1, zorder=1))
 
-	# 		Z = multivariate_gaussian(mvpos, np.array(pos), Sigma) * 1e5
-	# 		cset = ax.contourf(X, Y, Z, levels=np.linspace(10., 100., 11), 
-	# 						   cmap=cm.coolwarm, alpha=0.5)
+			workloads.append(compute_area_workload(poly, holes))
 
-	# 		# skeleton = get_skeleton(poly, holes)
-	# 		# for h in skeleton.halfedges:
-	# 		# 	if h.is_bisector:
-	# 		# 		p1 = h.vertex.point
-	# 		# 		p2 = h.opposite.vertex.point
-	# 		# 		plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+			# Z = multivariate_gaussian(mvpos, np.array(pos), Sigma) * 1e5
+			# cset = ax2.contourf(X, Y, Z, levels=np.linspace(10., 100., 11), 
+			# 				   cmap=cm.coolwarm, alpha=0.7)
 
-	# 		# for v in skeleton.vertices:
-	# 		# 	plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
-	# 		# 										   v.time, color='blue', fill=False))
+			if with_skel:
+				skeleton = get_skeleton(poly, holes)
+				for h in skeleton.halfedges:
+					if h.is_bisector:
+						p1 = h.vertex.point
+						p2 = h.opposite.vertex.point
+						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
 
-	# 		# mg_in, mg_b = get_metric_graph(np.array(poly, dtype=float), 
-	# 		# 								[np.array(h, dtype=float) for h in holes])
+			# for v in skeleton.vertices:
+			# 	plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 
+			# 										   v.time, color='blue', fill=False))
 
-	# 		# if len(mg_in) > 0:
-	# 		# 	mg_in_xs, mg_in_ys = zip(*mg_in)
-	# 		# 	ax.scatter(mg_in_xs, mg_in_ys, s=0.5, color=robot_color)
+			# mg_in, mg_b = get_metric_graph(np.array(poly, dtype=float), 
+			# 								[np.array(h, dtype=float) for h in holes])
 
-	# 		# if len(mg_b) > 0:
-	# 		# 	mg_b_xs, mg_b_ys = zip(*mg_b)
-	# 		# 	ax.scatter(mg_b_xs, mg_b_ys, s=0.5, color=robot_color)
+			# if len(mg_in) > 0:
+			# 	mg_in_xs, mg_in_ys = zip(*mg_in)
+			# 	ax.scatter(mg_in_xs, mg_in_ys, s=0.5, color=robot_color)
 
-	# 	if len(workloads) > 0:
-	# 		std = np.std(workloads)
-	# 		print("Workload Std. - Var.: {} - {}".format(std, std ** 2))
+			# if len(mg_b) > 0:
+			# 	mg_b_xs, mg_b_ys = zip(*mg_b)
+			# 	ax.scatter(mg_b_xs, mg_b_ys, s=0.5, color=robot_color)
 
-	# plt.show()
+		if len(workloads) > 0:
+			print("Workloads: {}".format(workloads))
+			std = np.std(workloads)
+			print("Workload Std. - Var.: {} - {}".format(std, std ** 2))
+
+	plt.savefig('F_h2.png', bbox_inches='tight')
+
+	plt.show()

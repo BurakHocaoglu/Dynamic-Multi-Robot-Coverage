@@ -4,6 +4,10 @@
 # Square environment as base case
 # coverage_boundary: [[80., 80.], [-80., 80.], [-80., -80.], [80., -80.]]
 
+# Irregular convex hexagon for convex diversity
+coverage_boundary: [[-70., 60.], [-100., 10.], [-100., -20.], [-80., -20.], 
+                    [-20., 10.], [-30., 50.]]
+
 # Letter A
 # coverage_boundary: [[65., 65.], [40., 15.], [50., 15.], [60., 35.], 
 #                     [70., 35.], [80., 15.], [90., 15.]]
@@ -61,8 +65,8 @@
 # coverage_boundary: [[-100., 90.], [-100., -70.], [-20., -70.], [-20., 90.]]
 
 # Six shape boundary
-coverage_boundary: [[-80., 130.], [-80., 10.], [20., 10.], [20., 80.], 
-                    [-70., 80.], [-70., 120.], [20., 120.], [20., 130.]]
+# coverage_boundary: [[-80., 130.], [-80., 10.], [20., 10.], [20., 80.], 
+#                     [-70., 80.], [-70., 120.], [20., 120.], [20., 130.]]
 
 # Rectangular concave environment
 # coverage_boundary: [[-80., 60.], [-20., 60.], [-20., 40.], [20., 40.], 

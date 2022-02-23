@@ -77,6 +77,7 @@ class Agent {
 		bool debug_step;
 		uint8_t id;
 		uint8_t process_steps;
+		uint32_t iteration_count;
 		std::string name;
 		Vector2d position;
 		Vector2d velocity;

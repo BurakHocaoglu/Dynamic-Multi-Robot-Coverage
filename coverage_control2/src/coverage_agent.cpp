@@ -7,7 +7,8 @@ Agent::Agent(ros::NodeHandle& nh_, const std::string& name_, uint8_t id_) :
 	is_ready(false), 
 	debug_step(false), 
 	sample_count(30), 
-	process_steps(0)
+	process_steps(0),
+	iteration_count(0)
 {
 	position << 0.0, 0.0;
 	velocity << 0.0, 0.0;
@@ -362,7 +363,8 @@ void Agent::step() {
 	std::vector<Vector2d> constraints;
 	std::vector<BoundarySegment> neighbour_segments;
 
-	visibility_polygon();
+	if (b_settings.centroid_alg != CentroidAlgorithm::GEOMETRIC) 
+		visibility_polygon();
 
 	std::unordered_map<uint8_t, AgentState>::iterator itr = neighbours.begin();
 	for (; itr != neighbours.end(); itr++) {
@@ -492,19 +494,22 @@ void Agent::control_step(Vector2d& force, uint32_t recursion_count) {
 
 	Vector2d current_goal = position + velocity * m_params.delta_t;
 	if (!is_point_valid_compact(current_goal)) {
-		ROS_WARN("%s - invalid goal (%.3f, %.3f)!", name.c_str(), current_goal(0), current_goal(1));
 
-		if (centroid_path.size() > 1) {
-			double metric_resolution = m_params.physical_radius * s_params.sense_fp_phys_rad_scale;
-			goal = centroid_path[1];
-			// goal = grid_2_real(centroid_path[1], actual_region_bbox, metric_resolution);
+		if (b_settings.centroid_alg != CentroidAlgorithm::GEOMETRIC) {
+			ROS_WARN("%s - invalid goal (%.3f, %.3f)!", name.c_str(), current_goal(0), current_goal(1));
 
-			ROS_WARN("%s - Rerouting towards (%.3f, %.3f)...", name.c_str(), goal(0), goal(1));
+			if (centroid_path.size() > 1) {
+				double metric_resolution = m_params.physical_radius * s_params.sense_fp_phys_rad_scale;
+				goal = centroid_path[1];
+				// goal = grid_2_real(centroid_path[1], actual_region_bbox, metric_resolution);
 
-			velocity = goal - position;
-		} else {
-			ROS_WARN("%s - Cannot run without a proper centroid path!", name.c_str());
-			return;
+				ROS_WARN("%s - Rerouting towards (%.3f, %.3f)...", name.c_str(), goal(0), goal(1));
+
+				velocity = goal - position;
+			} else {
+				ROS_WARN("%s - Cannot run without a proper centroid path!", name.c_str());
+				return;
+			}
 		}
 	}
 
@@ -1227,6 +1232,10 @@ BFSAgent Agent::geodesic_voronoi_partition_discrete(std::unordered_map<uint8_t, 
 		return self;
 	}
 
+	iteration_count++;
+	ROS_INFO("%s - [%u] Discrete mass = %.2f/%.2f", name.c_str(), iteration_count, 
+													mass_discrete, self.discrete_mass);
+
 	SkeletalGraph skeletal_map(v_count, 1);
 	Vector2dHash<Vector2d> vertexHasher;
 
@@ -1258,52 +1267,46 @@ BFSAgent Agent::geodesic_voronoi_partition_discrete(std::unordered_map<uint8_t, 
 	current_workload = self.discrete_mass;
 	largest_workload = 0.; // Symbolic, has no use
 
-	ROS_INFO("%s - P: (%.2f, %.2f) & GP: (%.2f, %.2f) & CP: (%.2f, %.2f)", name.c_str(), 
-																	position(0), position(1), 
-																	self.gp(0), self.gp(1), 
-																	target(0), target(1));
+	// ROS_INFO("%s - P: (%.2f, %.2f) & GP: (%.2f, %.2f) & CP: (%.2f, %.2f)", name.c_str(), 
+	// 																position(0), position(1), 
+	// 																self.gp(0), self.gp(1), 
+	// 																target(0), target(1));
 
-	// std::vector<Vector2d> targetPath = skeletal_map.getPathToVertex(self.gp, target);
-	// centroid_path = targetPath;
+	centroid_path = skeletal_map.getPathToVertex(self.gp, target);
+	// centroid_path = skeletal_map.getPathToVertex(self.gp, target, id == 3);
 
-	// centroid_path = skeletal_map.getPathToVertex(self.gp, target);
-	centroid_path = skeletal_map.getPathToVertex(self.gp, target, id == 3);
+	// if (id == 3) {
+	// 	std::cout << "---\n";
+	// 	std::cout << "NB for " << name << " start: ";
+	// 	// std::pair<double, double> self_gp_key = std::make_pair(self.gp(0), self.gp(1));
+	// 	for (auto nbv : self.edges[self_gp_key]) {
+	// 		std::cout << "(" << nbv.first << ", " << nbv.second << ") ";
+	// 	}
+	// 	std::cout << "---\n";
+	// 	std::cout << "Path of " << name << ": ";
+	// 	for (size_t c = 0; c < centroid_path.size(); c++) {
+	// 		std::cout << "(" << centroid_path[c](0) << ", " << centroid_path[c](1) << ") ";
+	// 	}
+	// 	std::cout << "---\n";
+	// }
 
-	if (id == 3) {
-		std::cout << "---\n";
-		std::cout << "NB for " << name << " start: ";
-		// std::pair<double, double> self_gp_key = std::make_pair(self.gp(0), self.gp(1));
-		for (auto nbv : self.edges[self_gp_key]) {
-			std::cout << "(" << nbv.first << ", " << nbv.second << ") ";
-		}
-		std::cout << "---\n";
-		std::cout << "Path of " << name << ": ";
-		for (size_t c = 0; c < centroid_path.size(); c++) {
-			std::cout << "(" << centroid_path[c](0) << ", " << centroid_path[c](1) << ") ";
-		}
-		std::cout << "---\n";
-	}
-
-	// if (targetPath.size() == 0) {
-	if (centroid_path.size() == 0) {
-		ROS_INFO("%s - is at the centroid already!", name.c_str());
-		force_exerted_on_self = Vector2d(0., 0.);
-		return self;
-	// } else if (targetPath.size() == 1) {
-	} else if (centroid_path.size() == 1) {
-		ROS_WARN("%s - there is only 1 vertex in the target path! Bug maybe?", name.c_str());
-		force_exerted_on_self = Vector2d(0., 0.);
-		return self;
-	}
+	// if (centroid_path.size() == 0) {
+	// 	ROS_INFO("%s - is at the centroid already!", name.c_str());
+	// 	force_exerted_on_self = Vector2d(0., 0.);
+	// 	return self;
+	// } else if (centroid_path.size() == 1) {
+	// 	ROS_WARN("%s - there is only 1 vertex in the target path! Bug maybe?", name.c_str());
+	// 	force_exerted_on_self = Vector2d(0., 0.);
+	// 	return self;
+	// }
 
 	// std::pair<double, double> goal_key = std::make_pair(target(0), target(1));
 	// Vector2d geodesic_vector_direct = target - position;
 
 	double cntr_dist = 0.;
 	// Vector2d geodesic_centroid_orientation = calculate_geodesic_orientation(goal_key, self, cntr_dist);
-	// Vector2d geodesic_centroid_orientation = skeletal_map.getNext(self.gp, target, cntr_dist) - position;
-	// Vector2d geodesic_centroid_orientation = targetPath[1] - position;
-	Vector2d geodesic_centroid_orientation = centroid_path[1] - position;
+	Vector2d geodesic_centroid_orientation = skeletal_map.getNext(self.gp, target, cntr_dist) - position;
+	// Vector2d geodesic_centroid_orientation = centroid_path[1] - position;
 
 	try {
 		Vector2d workload_sensitive_vector(0., 0.);

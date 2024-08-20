@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<launch>
+
+	<arg name="count" default="32" />
+	<arg name="prefix" default="gdb -ex run --args" />
+
+	<rosparam command="load" file="$(find coverage_control2)/cfg/params.yaml" />
+
+	<node name="monitor" pkg="coverage_control2" type="monitor.py" args="$(arg count)" output="screen" />
+
+	<node name="A1" pkg="coverage_control2" type="dist_coverage_node" args="1" output="screen" />
+	<node name="A2" pkg="coverage_control2" type="dist_coverage_node" args="2" output="screen" />
+	<node name="A3" pkg="coverage_control2" type="dist_coverage_node" args="3" output="screen" />
+	<node name="A4" pkg="coverage_control2" type="dist_coverage_node" args="4" output="screen" />
+	<node name="A5" pkg="coverage_control2" type="dist_coverage_node" args="5" output="screen" />
+	<node name="A6" pkg="coverage_control2" type="dist_coverage_node" args="6" output="screen" />
+	<node name="A7" pkg="coverage_control2" type="dist_coverage_node" args="7" output="screen" />
+	<node name="A8" pkg="coverage_control2" type="dist_coverage_node" args="8" output="screen" />
+	<node name="A9" pkg="coverage_control2" type="dist_coverage_node" args="9" output="screen" />
+	<node name="A10" pkg="coverage_control2" type="dist_coverage_node" args="10" output="screen" />
+	<node name="A11" pkg="coverage_control2" type="dist_coverage_node" args="11" output="screen" />
+	<node name="A12" pkg="coverage_control2" type="dist_coverage_node" args="12" output="screen" />
+	<node name="A13" pkg="coverage_control2" type="dist_coverage_node" args="13" output="screen" />
+	<node name="A14" pkg="coverage_control2" type="dist_coverage_node" args="14" output="screen" />
+	<node name="A15" pkg="coverage_control2" type="dist_coverage_node" args="15" output="screen" />
+	<node name="A16" pkg="coverage_control2" type="dist_coverage_node" args="16" output="screen" />
+	<node name="A17" pkg="coverage_control2" type="dist_coverage_node" args="17" output="screen" />
+	<node name="A18" pkg="coverage_control2" type="dist_coverage_node" args="18" output="screen" />
+	<node name="A19" pkg="coverage_control2" type="dist_coverage_node" args="19" output="screen" />
+	<node name="A20" pkg="coverage_control2" type="dist_coverage_node" args="20" output="screen" />
+	<node name="A21" pkg="coverage_control2" type="dist_coverage_node" args="21" output="screen" />
+	<node name="A22" pkg="coverage_control2" type="dist_coverage_node" args="22" output="screen" />
+	<node name="A23" pkg="coverage_control2" type="dist_coverage_node" args="23" output="screen" />
+	<node name="A24" pkg="coverage_control2" type="dist_coverage_node" args="24" output="screen" />
+	<node name="A25" pkg="coverage_control2" type="dist_coverage_node" args="25" output="screen" />
+	<node name="A26" pkg="coverage_control2" type="dist_coverage_node" args="26" output="screen" />
+	<node name="A27" pkg="coverage_control2" type="dist_coverage_node" args="27" output="screen" />
+	<node name="A28" pkg="coverage_control2" type="dist_coverage_node" args="28" output="screen" />
+	<node name="A29" pkg="coverage_control2" type="dist_coverage_node" args="29" output="screen" />
+	<node name="A30" pkg="coverage_control2" type="dist_coverage_node" args="30" output="screen" />
+	<node name="A31" pkg="coverage_control2" type="dist_coverage_node" args="31" output="screen" />
+	<node name="A32" pkg="coverage_control2" type="dist_coverage_node" args="32" output="screen" />
+
+</launch>

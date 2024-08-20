@@ -1,13 +1,41 @@
 #include "coverage_control2/coverage_agent.h"
+#include <signal.h>
+
+int global_id = -1;
+std::shared_ptr<Agent> agent_ptr = nullptr;
+
+void mySigintHandler(int sig) {
+	printf("GloID: %d CAUGHT SIGINT!\n", global_id);
+
+	if (agent_ptr != nullptr)
+		agent_ptr->set_alive(false);
+
+	ros::shutdown();
+}
+
+void mySigfpeHandler(int sig) {
+	printf("GloID: %d CAUGHT SIGFPE!\n", global_id);
+
+	if (agent_ptr != nullptr)
+		agent_ptr->set_alive(false);
+
+	ros::shutdown();
+}
 
 int main(int argc, char **argv) {
 	uint8_t aid = std::stoi(argv[1]);
+	global_id = aid;
 	std::string node_name = "Agent" + std::string(argv[1]);
 
-	ros::init(argc, argv, node_name.c_str());
+	ros::init(argc, argv, node_name.c_str(), ros::init_options::NoSigintHandler);
 	ros::NodeHandle node;
 
+	signal(SIGINT, mySigintHandler);
+	signal(SIGFPE, mySigfpeHandler);
+
 	Agent agent(node, node_name, aid);
+
+	agent_ptr.reset(&agent);
 
 	DebugLogConfig dcfg;
 
@@ -75,6 +103,7 @@ int main(int argc, char **argv) {
 		m_params.K_repulsion = motion_params["K_repulsion"];
 		m_params.K_attraction = motion_params["K_attraction"];
 		m_params.K_goal = motion_params["K_goal"];
+		m_params.comm_tolerance = (int)(motion_params["communication_tolerance"]);
 
 		agent.set_motion_params(m_params);
 		ROS_INFO("%s finished motion parameter setup.", node_name.c_str());
@@ -88,6 +117,7 @@ int main(int argc, char **argv) {
 		s_params.sigma_local = sensing_params["sigma_local"];
 		s_params.sense_radius = sensing_params["sense_radius"];
 		s_params.hfov_range = deg2rad(sensing_params["hfov_range_deg"]);
+		s_params.boundary_tol = sensing_params["boundary_tolerance"];
 
 		agent.set_sensing_params(s_params);
 		ROS_INFO("%s finished sensing parameter setup.", node_name.c_str());
@@ -130,21 +160,34 @@ int main(int argc, char **argv) {
 	ROS_INFO("%s will loop at %.2f Hz [for convergence].", node_name.c_str(), frequency);
 
 	ros::Time warmup_start = ros::Time::now();
+	ros::Rate warmup_rate(frequency * 2.);
 	while (ros::ok() && !agent.ready()) {
 		ros::spinOnce();
-		rate.sleep();
+		warmup_rate.sleep();
 	}
 
-	ROS_INFO("%s has warmed up.", node_name.c_str());
+	ROS_INFO("%s has warmed up. Waiting...", node_name.c_str());
+	// ros::Duration(1.).sleep();
 
 	// std::chrono::high_resolution_clock::time_point cycle_start, cycle_end;
 	while (ros::ok()) {
 		// ros::Time cycle_start = ros::Time::now();
 		// cycle_start = std::chrono::high_resolution_clock::now();
 
+		if (!agent.is_alive())
+			break;
+
 		agent.broadcast();
-		agent.step();
-		agent.control_step();
+
+		if (agent.ready_for_geodesic_step()) {
+			agent.check_neighbours();
+			agent.step();
+			agent.control_step();
+		}
+
+		// agent.check_neighbours();
+		// agent.step();
+		// agent.control_step();
 
 		ros::spinOnce();
 		// cycle_end = std::chrono::high_resolution_clock::now();

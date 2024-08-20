@@ -31,6 +31,7 @@
 #include <typeinfo>
 #include <list>
 #include <vector>
+#include <array>
 #include <deque>
 #include <limits>
 #include <random>
@@ -135,6 +136,20 @@ typedef bgi::rtree<MGValue, bgi::quadratic<16> > MGRTree;
 
 typedef std::pair<std::pair<double, double>, uint8_t> DeletionUpdate;
 
+constexpr std::size_t nHexagonVertices = 6;
+using RegCvxHexagon = std::array<Point_2, nHexagonVertices>;
+
+auto getRegCvxHexagonPoly = [](Vector2d& p, double D) {
+	RegCvxHexagon cell;
+
+	for (std::size_t i = 0; i < nHexagonVertices; i++) {
+		cell[i] = Point_2(p(0) + D * std::cos(i * M_PI / 3.0), 
+						  p(1) + D * std::sin(i * M_PI / 3.0));
+	}
+
+	return Polygon_2(cell.begin(), cell.end());
+};
+
 enum CentroidAlgorithm {
 	UNKNOWN_ALG=0,
 	GEOMETRIC=1,
@@ -155,6 +170,7 @@ enum CentroidalMetric {
 };
 
 struct MotionParameters {
+	int comm_tolerance;
 	double delta_t;
 	double attraction_const;
 	double repulsion_const;
@@ -175,9 +191,13 @@ struct SensingParameters {
 	double sigma_local;
 	double sense_radius;
 	double hfov_range;
+	double boundary_tol;
 };
 
 struct AgentState {
+	bool alive;
+	bool dijkstra_state;
+	int seq;
 	double heading;
 	double workload;
 	Vector2d position;
@@ -218,6 +238,7 @@ struct SkeletalNode {
 };
 
 struct BFSAgent {
+	bool alive;
 	uint8_t id;
 	uint32_t step_count;
 	double step_size;
@@ -238,8 +259,8 @@ struct BFSAgent {
 
 	void add_border_info(std::pair<double, double> border_vertex, uint8_t border_to);
 
-	std::set<std::pair<double, double> > frontier_expand(std::vector<MoveAction>& actions, 
-														 Polygon_with_holes_2& context);
+	std::set<std::pair<double, double> > frontier_expand(const std::vector<MoveAction>& actions, 
+														 const Polygon_with_holes_2& context);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -314,14 +335,14 @@ inline double saturation(double x) {
 void get_metric_graph(Polygon_with_holes_2& polygon, double resolution, 
 					  std::vector<Point_2>& outPoints);
 
-double a_star_search(Point_2& start, Point_2& goal, double step_size, 
-					 Polygon_with_holes_2& environment, bool prune, bool debug=false, 
-					 bool with_path=false, std::vector<Vector2d>* outPathR=nullptr);
+// double a_star_search(Point_2& start, Point_2& goal, double step_size, 
+// 					 Polygon_with_holes_2& environment, bool prune, bool debug=false, 
+// 					 bool with_path=false, std::vector<Vector2d>* outPathR=nullptr);
 
-void mark_domains(CDT& ct, Face_handle start, int index, std::list<CDT::Edge>& border);
-void mark_domains(CDT& cdt);
+// void mark_domains(CDT& ct, Face_handle start, int index, std::list<CDT::Edge>& border);
+// void mark_domains(CDT& cdt);
 
-void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt);
+// void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt);
 
 class SkeletalGraph {
 	public:
@@ -342,10 +363,11 @@ class SkeletalGraph {
 		const std::unordered_map<int, SkeletalNode>& getVertexMap() const;
 		Vector2d getVertexById(int id);
 		std::vector<Point_2> getVerticesAsCgalPoints();
-		std::vector<UtilityPair> getNextToVertexFrom(Vector2d& fromV, Vector2d& toV);
+		std::vector<UtilityPair> getNextToVertexFrom(const Vector2d& fromV, const Vector2d& toV);
 		void assignWeightToVertex(int vid, double w);
 		Vector2d getNext(Vector2d& start, Vector2d& goal, double& outDist);
-		std::vector<Vector2d> getPathToVertex(Vector2d& start, Vector2d& goal, bool debug=false);
+		std::vector<Vector2d> getPathToVertex(const Vector2d& start, const Vector2d& goal, bool debug=false);
+		// double getMaxDistFrom(const Vector2d& point);
 
 	private:
 		MatrixXd graph;

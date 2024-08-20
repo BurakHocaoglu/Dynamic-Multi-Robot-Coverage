@@ -2,9 +2,25 @@
 #define DIST_COVERAGE_AGENT_H
 
 #include "coverage_control2/coverage_utils.h"
+#include <boost/functional/hash.hpp>
 
 # define nice(os) ((os == CGAL::ON_ORIENTED_BOUNDARY) ? "on boundary" :  \
                    (os == CGAL::POSITIVE) ? "inside" : "outside")
+
+// struct hash_pair {
+// 	template <class T1, class T2>
+// 	size_t operator()(const pair<T1, T2>& p) const {
+// 		auto hash1 = std::hash<T1>{}(p.first);
+// 		auto hash2 = std::hash<T2>{}(p.second);
+
+// 		if (hash1 != hash2) {
+// 			return hash1 ^ hash2;
+// 		}
+
+// 		// If hash1 == hash2, their XOR is zero.
+// 		return hash1;
+// 	}
+// };
 
 class Agent {
 	public:
@@ -16,7 +32,10 @@ class Agent {
 		void set_behaviour_settings(const BehaviourSettings& bs);
 		void set_task_region_from_raw(Polygon_2& c_bounds, Polygon_2_Array& c_holes);
 
+		uint8_t get_id();
 		bool ready();
+		bool is_alive();
+		void set_alive(bool inAlive);
 		bool is_point_valid(const Point_2& p);
 		bool is_point_valid(const Vector2d& p);
 		bool is_point_valid_compact(const Point_2& p);
@@ -27,9 +46,12 @@ class Agent {
 		void select_goal_from_local_frontier(std::vector<UtilityPair>& frontier);
 		Vector2d calculate_geodesic_orientation(std::pair<double, double> v, BFSAgent& agent, double& d);
 
+		void check_neighbours();
 		void step();
 		void control_step(uint32_t recusrion_count=0);
-		void control_step(Vector2d& force, uint32_t recursion_count=0);
+		void control_step(const Vector2d& force, uint32_t recursion_count=0);
+
+		bool ready_for_geodesic_step();
 
 	private:
 		void visibility_polygon();
@@ -57,6 +79,7 @@ class Agent {
 		bool handle_SetInitialPose(SetInitialPose::Request& req, SetInitialPose::Response& res);
 		bool handle_SetReady(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 		bool handle_DumpSkeleton(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
+		bool handle_SelfTermination(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 
 		ros::NodeHandle nh;
 		ros::Publisher vpoly_pub;
@@ -70,14 +93,18 @@ class Agent {
 		ros::ServiceServer initPose_service;
 		ros::ServiceServer ready_service;
 		ros::ServiceServer dump_skeleton_service;
+		ros::ServiceServer self_termination_service;
 
 		std::unordered_map<uint8_t, AgentState> neighbours;
 
 		bool is_ready;
+		bool self_dijkstra_state;
 		bool debug_step;
+		bool alive;
 		uint8_t id;
 		uint8_t process_steps;
 		uint32_t iteration_count;
+		int self_seq;
 		std::string name;
 		Vector2d position;
 		Vector2d velocity;

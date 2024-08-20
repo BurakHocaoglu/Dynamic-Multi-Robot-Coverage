@@ -1,3 +1,5 @@
 uint8 id
+float64 workload
+float64 workload_scale
 geometry_msgs/Point position
 coverage_control2/PolygonWithHoles cell

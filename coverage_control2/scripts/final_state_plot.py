@@ -210,6 +210,13 @@ def history_iterator(hist):
 		time.sleep(0.5)
 		globals()["history_index"] += 1
 
+def get_total_path_traversed(pos_history):
+	total = 0.
+	for i in range(len(pos_history) - 1):
+		total += np.linalg.norm(np.array(pos_history[i + 1]) - np.array(pos_history[i]))
+
+	return total
+
 def customSigintHandler(signum, frame):
 	globals()["stop"] = True
 
@@ -221,89 +228,6 @@ if __name__ == "__main__":
 
 	with_skel = int(sys.argv[2]) == 1
 
-	exp_region = [[80., 80.], [80., -80.], [-80., -80.], [-80., 80.]]
-	# exp_region = [[80., 100.], [80., -40.], [-80., -40.], [-80., 100.]]
-	# exp_region = [[-20., 50.], [-50., 20.], [-40., -20.], [10., -50.], [40., 10.], [30., 40.]]
-	# exp_region = [[30., -20.], [30., -40.], [10., -50.], [40., -60.], [20., -110.], [40., -90.], 
-	# 				[90., -100.], [70., -80.], [80., -50.], [70., -10.], [50., -30.]]
-
-	# exp_region = [[-100., 90.], [-100., -70.], [-20., -70.], [-20., 90.]]
-	# exp_region = [[-100., 90.], [-100., 70.], [-70., 70.], [-70., 64.], 
-	# 				[-100., 64.], [-100., 26.], [-72., 26.], [-72., 38.], 
-	# 				[-66., 38.], [-66., 22.], [-100., 22.], [-100., -70.], 
-	# 				[-80., -70.], [-80., -22.], [-74., -22.], [-74., -48.], 
-	# 				[-54., -48.], [-54., -54.], [-74., -54.], [-74., -70.], 
-	# 				[-20., -70.], [-20., 10.], [-60., 10.], [-60., 14.], 
-	# 				[-20., 14.], [-20., 52.], [-50., 52.], [-50., 56.], 
-	# 				[-20., 56.], [-20., 90.], [-56., 90.], [-56., 74.], 
-	# 				[-60., 74.], [-60., 90.]]
-
-	exp_region = [[-80., 130.], [-80., 10.], [20., 10.], [20., 80.], 
-				[-70., 80.], [-70., 120.], [20., 120.], [20., 130.]]
-
-	# exp_region = [[-90., 120.], [-90., 10.], [-10., 10.], [-10., 20.], 
-	# 			[-80., 20.], [-80., 40.], [-10., 40.], [-10., 60.], 
-	# 			[-80., 50.], [-80., 70.], [-30., 60.], [-20., 80.], 
-	# 			[-80., 80.], [-80., 90.], [-10., 90.], [-10., 100.], 
-	# 			[-80., 100.], [-80., 110.], [-10., 110.], [-10., 120.]]
-
-	# exp_region = np.array([[80., 140.], [120., 100.], [80., 100.], [20., 140.], 
-	# 						[40., 60.], [-40., 40.], [80., -20.], [80., 80.], 
-	# 						[160., -20.], [140., 80.], [300., 20.], [300., 120.], 
-	# 						[260., 60.], [180., 80.], [160., 180.], [320., 160.], 
-	# 						[140., 220.], [140., 120.]])
-
-	# exp_region = [[-140., 120.], [-200., 20.], [-200., -40.], [-160., -40.], [-40., 20.], [-60., 100.]]
-
-	# exp_region = np.array([[60., 60.], [-60., 23.], [20., -60.]])
-
-	# exp_region = np.array([[-90., 120.], [-90., 10.], [-10., 10.], [-10., 20.], 
-	# 						[-80., 20.], [-80., 40.], [-10., 40.], [-10., 60.], 
-	# 						[-80., 50.], [-80., 70.], [-30., 60.], [-20., 80.], 
-	# 						[-80., 80.], [-80., 90.], [-10., 90.], [-10., 100.], 
-	# 						[-80., 100.], [-80., 110.], [-10., 110.], [-10., 120.]])
-
-	# exp_region = np.array([[120., 140.], [50., 140.], [50., 90.], [115., 90.],
-	# 						[115., 130.], [60., 130.], [60., 100.], [105., 100.],
-	# 						[105., 120.], [70., 120.], [70., 115.], [100., 115.],
-	# 						[100., 105.], [65., 105.], [65., 125.], [110., 125.],
-	# 						[110., 95.], [55., 95.], [55., 135.], [120., 135.]])
-
-	xcoords, ycoords = zip(*exp_region)
-	xmin, xmax = min(xcoords), max(xcoords)
-	ymin, ymax = min(ycoords), max(ycoords)
-	limits = (xmin, ymin, xmax, ymax)
-
-	region_patch = plt.Polygon(list(exp_region), fill=False, color=(0., 0., 0.))
-	region_patch2 = plt.Polygon(list(exp_region), fill=False, color=(0., 0., 0.))
-
-	exp_obstacles = dict()
-	# exp_obstacles = {
-	# 	"obs1": [[-60., 60.], [-20., 60.], [-20., 20.], [-60., 20.]],
-	# 	"obs2": [[20., 60.], [60., 60.], [60., 20.], [20., 20.]],
-	# 	"obs3": [[20., -20.], [60., -20.], [60., -60.], [20., -60.]],
-	# 	"obs4": [[-60., -20.], [-20., -20.], [-20., -60.], [-60., -60.]],
-	# 	"obs5": [[-10., 10.], [10., 10.], [10., -10.], [-10., -10.]],
-	# }
-	# exp_obstacles = {
-	# 	"obs1": [[-60., 87.], [-56., 87.], [-56., 74.], [-60., 74.]],
-	# 	"obs2": [[-97., 70.], [-70., 70.], [-70., 64.], [-97., 64.]],
-	# 	"obs3": [[-50., 56.], [-22., 56.], [-22., 53.], [-50., 53.]],
-	# 	"obs4": [[-98., 26.], [-72., 26.], [-72., 37.], [-66., 37.], [-66., 23.], [-98., 23.]],
-	# 	"obs5": [[-60., 14.], [-24., 14.], [-24., 9.], [-60., 9.]],
-	# 	"obs6": [[-52., -14.], [-28., -14.], [-28., -30.], [-32., -30.], [-32., -17.], [-52., -17.]],
-	# 	"obs7": [[-80., -22.], [-74., -22.], [-74., -48.], [-54., -48.], 
-	# 			 [-54., -54.], [-74., -54.], [-74., -68.], [-80., -68.]],
-	# }
-	exp_obstacles = {
-		# "obs1": [[60., -60.], [-60., -60.], [-60., 60.], [60., 60.]],
-		"obs2": [[-70., 70.], [10., 70.], [10., 20.], [-70., 20.]],
-		# "obs": [[60., -60.], [-60., -60.], [-60., 60.], [60., 60.]],
-	}
-	for obs_name, obs in exp_obstacles.items():
-		obstacle_patches[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
-		obstacle_patches2[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
-
 	with open(sys.argv[1], "r") as H:
 		history = json.load(H)
 
@@ -311,7 +235,19 @@ if __name__ == "__main__":
 		print("Could not load history content!")
 		sys.exit(1)
 
-	print("Length: {}".format([len(hist["position"]) for _, hist in history.items()]))
+	region_patch = plt.Polygon(history["coverage_region"], fill=False, color=(0., 0., 0.))
+	region_patch2 = plt.Polygon(history["coverage_region"], fill=False, color=(0., 0., 0.))
+
+	xcoords, ycoords = zip(*(history["coverage_region"]))
+	xmin, xmax = min(xcoords), max(xcoords)
+	ymin, ymax = min(ycoords), max(ycoords)
+	limits = (xmin, ymin, xmax, ymax)
+
+	for obs_name, obs in history["coverage_obstacles"].items():
+		obstacle_patches[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
+		obstacle_patches2[obs_name] = plt.Polygon(list(obs), fill=True, color=(0., 0., 0.), alpha=0.8)
+
+	print([len(history[str(j + 1)]["position"]) for j in range(history["agent_count"])])
 
 	# -----------------------------------------------------------------------------------------------
 	print("******************************* START *******************************")
@@ -345,7 +281,7 @@ if __name__ == "__main__":
 
 	if history is not None:
 		workloads = []
-		for aid in range(len(history)):
+		for aid in range(history["agent_count"]):
 			pos = history[str(aid + 1)]["position"][10]
 			poly = history[str(aid + 1)]["polygon"][10]
 			holes = history[str(aid + 1)]["holes"][10]
@@ -388,7 +324,8 @@ if __name__ == "__main__":
 			std = np.std(workloads)
 			print("Workload Std. - Var.: {} - {}".format(std, std ** 2))
 
-	plt.savefig('F_h1.png', bbox_inches='tight')
+	# plt.savefig('F_h1.png', bbox_inches='tight')
+
 	# -----------------------------------------------------------------------------------------------
 	print("******************************* FINAL *******************************")
 
@@ -421,21 +358,22 @@ if __name__ == "__main__":
 
 	if history is not None:
 		workloads = []
-		for aid in range(len(history)):
+		for aid in range(history["agent_count"]):
 			pos = history[str(aid + 1)]["position"][-1]
 			poly = history[str(aid + 1)]["polygon"][-1]
 			holes = history[str(aid + 1)]["holes"][-1]
 			robot_color = __COLORS[aid + 1]
-			ax2.add_artist(plt.Circle(tuple(pos), 2., color=robot_color))
+			ax2.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
 			ax2.add_patch(plt.Polygon(poly, fill=True, color=robot_color, alpha=0.2, zorder=2))
 
 			x_hist, y_hist = zip(*(history[str(aid + 1)]["position"]))
-			ax2.plot(x_hist, y_hist, color=robot_color, linewidth=2.)
+			ax2.plot(x_hist, y_hist, color=robot_color, linewidth=2., alpha=0.5)
 
 			for h in holes:
 				ax2.add_patch(plt.Polygon(h, fill=True, color=(0., 0., 0.), alpha=1, zorder=1))
 
 			workloads.append(compute_area_workload(poly, holes))
+			print(f"Agent {aid + 1} has traversed {get_total_path_traversed(history[str(aid + 1)]['position'])} units (m).")
 
 			# Z = multivariate_gaussian(mvpos, np.array(pos), Sigma) * 1e5
 			# cset = ax2.contourf(X, Y, Z, levels=np.linspace(10., 100., 11), 
@@ -447,7 +385,7 @@ if __name__ == "__main__":
 					if h.is_bisector:
 						p1 = h.vertex.point
 						p2 = h.opposite.vertex.point
-						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], 'r-', lw=1)
+						plt.plot([p1.x(), p2.x()], [p1.y(), p2.y()], color=robot_color, lw=1)
 
 			# for v in skeleton.vertices:
 			# 	plt.gcf().gca().add_artist(plt.Circle((v.point.x(), v.point.y()), 

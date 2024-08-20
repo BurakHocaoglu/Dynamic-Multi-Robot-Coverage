@@ -1,17 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 import sys
 import time
 import json
 import rospy
 import signal
+import datetime
 import traceback
+import threading
 import numpy as np
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.animation as animation
+plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 
 from functools import partial
 from collections import deque
@@ -33,6 +37,7 @@ all_vl_voronoi = dict()
 motion_history = dict()
 all_vlv_history = dict()
 all_geodesic_partitions = dict()
+got_first = False
 
 plotting_title = "Dist. Cov. Experiment"
 
@@ -42,8 +47,23 @@ exp_obstacles = dict()
 obstacle_patches = dict()
 
 visibility_focus_id = -1
-visibility_focus_level = 0
-global_agent_init_seed = None
+visibility_focus_level = 2
+visibility_focus_level = 4
+global_agent_init_seed = 0
+
+global_iteration_threshold = 10
+coverage_name = ""
+distributed_algorithm = ""
+workload_scale = 1
+global_workload = 0
+global_sequence = 0
+sequence_stop = False
+seq_thread = None
+seq_tolerance = 3
+
+collect_states = True
+convergence_conditions = dict()
+convergence_movement_threshold = 1.
 
 def get_area(polygon):
 	area = 0
@@ -68,6 +88,7 @@ def get_random_positions(bnd, obs, lims, count):
 	valid_samples, i = [], 0
 	low_limit = [lims[0] + 1., lims[1] + 1.]
 	high_limit = [lims[2] - 1., lims[3] - 1.]
+	D = rospy.get_param("/sensing_params/sense_fp_phys_rad_scale", 2)
 
 	while i < count:
 		p = np.random.uniform(low_limit, high_limit, (2,)).round(3)
@@ -77,7 +98,8 @@ def get_random_positions(bnd, obs, lims, count):
 			continue
 
 		for sample in valid_samples:
-			if np.linalg.norm(p - sample) <= 5.:
+			# if np.linalg.norm(p - sample) <= 10.:
+			if np.linalg.norm(p - sample) <= 2.5 * D:
 				valid = False
 				break
 
@@ -87,12 +109,58 @@ def get_random_positions(bnd, obs, lims, count):
 
 	return valid_samples
 
+def compute_global_workload(region, holes, space="c", resolution=1.):
+	if space == 'c':
+		negative_workload = 0.
+
+		# for _, hole in holes.items():
+		# 	negative_workload += hole.area()
+
+		return region.area - negative_workload
+
+	elif space == 'd':
+		poly = sg.Polygon(region, list(holes.values()))
+		contracted_poly = poly.buffer(- resolution / 2.)
+
+		xmin, ymin, xmax, ymax = poly.bounds
+		xidx = xmin + resolution / 2.
+		valid_metric_points = []
+
+		while xidx < xmax:
+			yidx = ymin + resolution / 2.
+
+			while yidx < ymax:
+				p = sg.Point(xidx, yidx)
+
+				if poly.contains(p):
+					valid_metric_points.append((xidx, yidx))
+
+				yidx += resolution
+			xidx += resolution
+
+		return len(valid_metric_points)
+
+	else:
+		rospy.logwarn("Unknown space type {}!".format(space))
+		return 0.
+
+def check_convergence():
+	result = True
+
+	for _, stillness in globals()["convergence_conditions"].items():
+		result = result & (stillness >= 20)
+
+	return result
+
 def state_cb(msg):
+	# print("Monitor got from {} - {}".format(msg.id, msg.is_alive))
 	globals()["all_states"][msg.id] = {"pos": np.array([msg.position.x, msg.position.y], dtype=float), 
 									   "vel": np.array([msg.velocity.x, msg.velocity.y], dtype=float), 
 									   "goal": np.array([msg.goal.x, msg.goal.y], dtype=float), 
 									   "cntr": np.array([msg.centroid.x, msg.centroid.y], dtype=float), 
 									   "hdg": msg.heading, 
+									   "alive": msg.is_alive,
+									   "seq": msg.seq,
 									   "dom": msg.largest_workload_piece, 
 									   "load": msg.workload}
 
@@ -100,7 +168,22 @@ def state_cb(msg):
 		# globals()["motion_history"][msg.id] = deque(maxlen=100)
 		globals()["motion_history"][msg.id] = deque()
 
-	globals()["motion_history"][msg.id].append(np.array([msg.position.x, msg.position.y], dtype=float))
+	curr = np.array([msg.position.x, msg.position.y], dtype=float)
+
+	if len(globals()["motion_history"].get(msg.id)) > 1:
+		prev = globals()["motion_history"][msg.id][-1]
+
+		if np.linalg.norm(curr - prev) < globals()["convergence_movement_threshold"]:
+			globals()["convergence_conditions"][msg.id] += 1
+
+		else:
+			globals()["convergence_conditions"][msg.id] = 0
+
+	# if abs(msg.seq - globals()["global_sequence"]) < globals()["seq_tolerance"]:
+	# 	globals()["motion_history"][msg.id].append(curr)
+	# else:
+	# 	print("Agent {} has fallen behind! Set alive to False!".format(msg.id))
+	# 	globals()["all_states"][msg.id]['alive'] = False
 
 def vpoly_cb(msg):
 	projected_poly = [(v.x, v.y) for v in msg.points]
@@ -117,6 +200,10 @@ def voronoi_cb(msg):
 													   alpha=0.15)
 
 def vlv_poly_cb(msg):
+	if not globals()["collect_states"]:
+		rospy.logwarn("Everyone has passed the iteration threshold ({})!".format(globals()["global_iteration_threshold"]))
+		return
+
 	projected_poly = [(v.x, v.y) for v in msg.cell.outer_boundary.points]
 	projected_holes = []
 
@@ -134,20 +221,64 @@ def vlv_poly_cb(msg):
 			globals()["all_vlv_history"][msg.id]["position"] = []
 			globals()["all_vlv_history"][msg.id]["polygon"] = []
 			globals()["all_vlv_history"][msg.id]["holes"] = []
+			globals()["all_vlv_history"][msg.id]["workloads"] = []
 
 		globals()["all_vlv_history"][msg.id]["position"].append((msg.position.x, msg.position.y))
 		globals()["all_vlv_history"][msg.id]["polygon"].append(projected_poly)
 		globals()["all_vlv_history"][msg.id]["holes"].append(projected_holes)
+		globals()["all_vlv_history"][msg.id]["workloads"].append(msg.workload)
 
 	else:
 		print("{} - Invalid poly".format(msg.id))
 
+	history_lengths = [len(hist["position"]) for _, hist in globals()["all_vlv_history"].items()]
+
+	if min(history_lengths) >= globals()["global_iteration_threshold"]:
+		rospy.logwarn("Everyone has passed the iteration threshold ({})!".format(globals()["global_iteration_threshold"]))
+		globals()["collect_states"] = False
+
+	# if check_convergence():
+	# 	globals()["collect_states"] = False
+
 def geodesic_partition_cb(msg):
+	if not globals()["collect_states"]:
+		rospy.logwarn("Everyone has passed the iteration threshold ({})!".format(globals()["global_iteration_threshold"]))
+		return
+
+	# print("Agent {}".format(msg.id))
+
+	if not globals()["got_first"]:
+		globals()["got_first"] = True
+		globals()["all_vlv_history"]["T_start"] = time.time()
+
 	if globals()["all_geodesic_partitions"].get(msg.id) is None:
 		globals()["all_geodesic_partitions"][msg.id] = {"xcoords": [], "ycoords": []}
+		globals()["all_vlv_history"][msg.id] = {"position": [], "workloads": [], "max_geod_dist": []}
 
 	globals()["all_geodesic_partitions"][msg.id]["xcoords"] = msg.xcoords
 	globals()["all_geodesic_partitions"][msg.id]["ycoords"] = msg.ycoords
+	globals()["all_vlv_history"][msg.id]["position"].append((msg.position.x, msg.position.y))
+	globals()["all_vlv_history"][msg.id]["workloads"].append(msg.workload)
+
+	p = np.array((msg.position.x, msg.position.y))
+	partition = np.array((msg.xcoords, msg.ycoords)).T
+	globals()["all_vlv_history"][msg.id]["max_geod_dist"].append(max(np.linalg.norm(partition - p, axis=1)))
+
+	# print("{} - {}".format(type(globals()["all_vlv_history"]), type(globals()["all_vlv_history"].values()[0])))
+	# history_lengths = [len(hist["position"]) for _, hist in globals()["all_vlv_history"].items()]
+	history_lengths = []
+	for _, hist in globals()["all_vlv_history"].items():
+		if not isinstance(hist, dict):
+			continue
+
+		history_lengths.append(len(hist["position"]))
+
+	if min(history_lengths) >= globals()["global_iteration_threshold"]:
+		rospy.logwarn("Everyone has passed the iteration threshold ({})!".format(globals()["global_iteration_threshold"]))
+		globals()["collect_states"] = False
+
+	# if check_convergence():
+	# 	globals()["collect_states"] = False
 
 def handle_vp_focus(req):
 	try:
@@ -182,7 +313,8 @@ def handle_print_mass(req):
 		return False, "FAIL"
 
 def animate_experiment(i, ax, lims, S, VP, VLV):
-	ax.clear()
+	# ax.clear()
+	ax.cla()
 	ax.set_aspect("equal")
 	# ax.set_title("Dist. Cov. Experiment")
 	# ax.set_title(globals()["plotting_title"])
@@ -198,16 +330,33 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 
 	for aid, state in S.items():
 		# State visualization
-		pos, vel, hdg, goal = state['pos'], state['vel'], state['hdg'], state['goal']
+		pos, vel, hdg, goal, alive = state['pos'], state['vel'], state['hdg'], state['goal'], state['alive']
 		# cntr = state['cntr']
+
+		if not alive:
+			# print("Animation: {} isn't alive. Skipping...".format(aid))
+			continue
+		# else:
+		# 	print("Drawing {}...".format(aid))
+
+		# if abs(globals()["global_sequence"] - state['seq']) >= globals()["seq_tolerance"]:
+		# 	state['alive'] = False
+		# 	continue
+		# else:
+		# 	print("Agent {}({}) - Seq: {}, Global: {}".format(
+		# 		aid, alive, state['seq'], globals()["global_sequence"]))
+
 		robot_color = globals()['__COLORS'][aid]
 		# cntr_color = globals()['__COLORS'][aid - 1]
-		ax.quiver(pos[0], pos[1], np.cos(hdg), np.sin(hdg), color=robot_color)
+		# ax.quiver(pos[0], pos[1], np.cos(hdg), np.sin(hdg), color=robot_color)
 		ax.add_artist(plt.Circle(tuple(pos), 1., color=robot_color))
 		# ax.add_artist(plt.Circle(tuple(goal), 2., color=robot_color))
 		# ax.add_artist(plt.Circle(tuple(cntr), 1., color=cntr_color))
-		x_hist, y_hist = zip(*(globals()["motion_history"][aid]))
-		ax.plot(x_hist, y_hist, color=robot_color)
+
+		m_hist = globals()["motion_history"][aid]
+		if len(m_hist) > 0:
+			x_hist, y_hist = zip(*m_hist)
+			ax.plot(x_hist, y_hist, color=robot_color)
 
 		if globals()["visibility_focus_level"] == 1:
 			cvxpoly = globals()["all_cvx_voronoi"].get(aid)
@@ -230,20 +379,93 @@ def animate_experiment(i, ax, lims, S, VP, VLV):
 				ax.scatter(gpartition["xcoords"], gpartition["ycoords"], s=8., 
 							color=robot_color, alpha=0.5)
 
+def dump_experiment_data():
+	vis_suffix = rospy.get_param("/behaviours/visibility", False)
+
+	exp_results_dir = os.environ["HOME"] + "/thesis_ws/results"
+	exp_meta_dir = "{}/{}{}/{}".format(globals()["coverage_name"], 
+									   globals()["distributed_algorithm"], 
+									   "VIS" if vis_suffix else "", 
+									   globals()["agent_count"])
+
+	full_dir_path = exp_results_dir + "/" + exp_meta_dir
+
+	if not os.path.exists(full_dir_path):
+		os.makedirs(full_dir_path)
+
+	stamp = datetime.datetime.now()
+	filename = "exp_history_{}.json".format(stamp)
+	full_path = "{}/{}".format(full_dir_path, filename)
+
+	if os.path.exists(full_path):
+		rospy.logwarn("The file {} already exists. Not dumping anything!".format(filename))
+
+	else:
+		globals()["all_vlv_history"]["global_agent_init_seed"] = globals()["global_agent_init_seed"]
+		globals()["all_vlv_history"]["agent_count"] = globals()["agent_count"]
+		globals()["all_vlv_history"]["global_workload"] = globals()["global_workload"]
+		globals()["all_vlv_history"]["coverage_region"] = rospy.get_param("/coverage_boundary", [])
+		globals()["all_vlv_history"]["coverage_obstacles"] = rospy.get_param("/coverage_obstacles", dict())
+		globals()["all_vlv_history"]["agent_initial_positions"] = [tuple(p) for p in globals()["rand_positions"]]
+		globals()["all_vlv_history"]["workload_scale"] = globals()["workload_scale"]
+		globals()["all_vlv_history"]["env_name"] = rospy.get_param("/coverage_name", "")
+
+		with open(full_path, "w") as H:
+			json.dump(globals()["all_vlv_history"], H, indent=4)
+
+		print("Dumped experimental history to {}".format(full_path))
+
+def load_experiment_metadata():
+	globals()["coverage_name"] = rospy.get_param("/coverage_name", "NONE")
+	globals()["distributed_algorithm"] = rospy.get_param("/centroid_alg", "NONE")
+
+	phys_radius = rospy.get_param("/physical_radius", 0.5)
+	sense_radius_scale = rospy.get_param("/sense_fp_phys_rad_scale", 4)
+	globals()["workload_scale"] = phys_radius * sense_radius_scale;
+
+	if globals()["distributed_algorithm"] != "continuous_dijkstra":
+		globals()["global_iteration_threshold"] = rospy.get_param("/continuous_iteration_threshold", 10)
+		globals()["convergence_movement_threshold"] = phys_radius * 2.
+
+	else:
+		globals()["global_iteration_threshold"] = rospy.get_param("/discrete_iteration_threshold", 10)
+		globals()["convergence_movement_threshold"] = globals()["workload_scale"]
+
+def sequence_thread(period):
+	print("Sequence thread is on.")
+
+	while not globals()["sequence_stop"]:
+		t_start = time.time()
+		globals()["global_sequence"] += 1
+		t_passed = time.time() - t_start
+
+		if t_passed > period:
+			printf("Sequence thread missed.")
+		else:
+			time.sleep(period - t_passed)
+
+	print("Sequence thread is off.")
+
 def customSigIntHandler(signum, frame):
-	# for aid, vlv_history in globals()["all_vlv_history"].items():
-	# 	with open("Agent{}_VLV.json".format(aid), "w") as H:
-	# 		json.dump(vlv_history, H, indent=4)
+	globals()["collect_states"] = False
+	globals()["sequence_stop"] = True
 
-	# 	print("Dumped Agent {} VLV history.".format(aid))
+	if globals()["seq_thread"] is not None:
+		globals()["seq_thread"].join()
 
-	with open("all_vlv_history.json", "w") as H:
-		json.dump(globals()["all_vlv_history"], H, indent=4)
-
-	print("Dumped all VLV history.")
+	globals()["all_vlv_history"]["T_end"] = time.time()
+	# dump_experiment_data()
 
 if __name__ == "__main__":
 	agent_count = int(sys.argv[1])
+
+	for i in range(agent_count):
+		convergence_conditions[i + 1] = 0
+
+	if agent_count > len(__COLORS):
+		additional_colors = [tuple(np.random.rand(3)) for j in range(agent_count - len(__COLORS) + 1)]
+		__COLORS.extend(additional_colors)
+
 	rospy.init_node("monitor", anonymous=False, disable_signals=True)
 
 	signal.signal(signal.SIGINT, customSigIntHandler)
@@ -259,6 +481,9 @@ if __name__ == "__main__":
 	print_instantaneous_mass = rospy.Service("/print_instantaneous_mass", PrintMass, handle_print_mass)
 
 	plotting_title = rospy.get_param("/plotting_title", "Dist. Cov. Experiment")
+	seq_tolerance = rospy.get_param("/behaviours/communication_tolerance", 3)
+
+	load_experiment_metadata()
 
 	limits = None
 	exp_region = rospy.get_param("/coverage_boundary", [])
@@ -291,7 +516,15 @@ if __name__ == "__main__":
 	else:
 		rospy.logwarn("No agent initial location random seed is found! Reverting to random seeding.")
 
+	global_workload = compute_global_workload(exp_region, exp_obstacles, 
+		space="d" if distributed_algorithm == "continuous_dijkstra" else "c", 
+		resolution=workload_scale)
+
 	rand_positions = get_random_positions(exp_region, exp_obstacles, limits, agent_count)
+	# rand_positions = [np.array([-70., 10.]), 
+	# 				  np.array([30., -60.]), 
+	# 				  np.array([-30., -20.]), 
+	# 				  np.array([70., 70.])]
 
 	for i in range(agent_count):
 		p = rand_positions[i]
@@ -324,6 +557,11 @@ if __name__ == "__main__":
 			rospy.logerr("Failed to set Agent {} ready!".format(i + 1))
 			sys.exit(1)
 
+	seq_thread = threading.Thread(name="Sequencer", 
+								  target=sequence_thread, 
+								  args=(rospy.get_param("/motion_params/delta_t", 1.), ))
+	seq_thread.start()
+
 	figure = plt.figure()
 	exp_ax = figure.add_subplot(1, 1, 1)
 	ani_func = animation.FuncAnimation(figure, 
@@ -333,11 +571,8 @@ if __name__ == "__main__":
 									   		   S=all_states, 
 									   		   VP=all_vpolygons, 
 									   		   VLV=all_vl_voronoi), 
-									   interval=200,
+									   interval=200, 
 									   save_count=50)
-
-	# writervideo = animation.FFMpegWriter(fps=60)
-	# ani_func.save("/home/burak/Desktop/Lloyd_9.avi", writer=writervideo)
 
 	rospy.loginfo("Experiment will be visualized, now...")
 	plt.show(block=True)

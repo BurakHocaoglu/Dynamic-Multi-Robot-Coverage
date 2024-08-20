@@ -1,4 +1,7 @@
 uint8 id
+bool dijkstra_state
+uint32 seq
+bool is_alive
 float64 heading
 geometry_msgs/Vector3 position
 geometry_msgs/Vector3 goal

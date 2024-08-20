@@ -1,0 +1,8 @@
+#pragma once
+
+#ifndef DIST_COVERAGE_COMMON_TYPES_H
+#define DIST_COVERAGE_COMMON_TYPES_H
+
+
+
+#endif // DIST_COVERAGE_COMMON_TYPES_H

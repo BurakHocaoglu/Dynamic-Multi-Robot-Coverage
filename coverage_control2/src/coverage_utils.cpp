@@ -14,175 +14,175 @@ void get_metric_graph(Polygon_with_holes_2& polygon, double resolution,
 	}
 }
 
-double a_star_search(Point_2& start, Point_2& goal, double step_size, 
-					 Polygon_with_holes_2& environment, bool prune, bool debug, 
-					 bool with_path, std::vector<Vector2d>* outPathR) {
-	auto inside_check = CGAL::oriented_side(start, environment);
-	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) {
-		if (debug)
-			std::cout << "Invalid start location!\n";
+// double a_star_search(Point_2& start, Point_2& goal, double step_size, 
+// 					 Polygon_with_holes_2& environment, bool prune, bool debug, 
+// 					 bool with_path, std::vector<Vector2d>* outPathR) {
+// 	auto inside_check = CGAL::oriented_side(start, environment);
+// 	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) {
+// 		if (debug)
+// 			std::cout << "Invalid start location!\n";
 
-		return -1;
-	}
+// 		return -1;
+// 	}
 
-	inside_check = CGAL::oriented_side(goal, environment);
-	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) {
-		if (debug) 
-			std::cout << "Invalid goal location!\n";
+// 	inside_check = CGAL::oriented_side(goal, environment);
+// 	if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) {
+// 		if (debug) 
+// 			std::cout << "Invalid goal location!\n";
 
-		return -1;
-	}
+// 		return -1;
+// 	}
 
-	if (with_path && outPathR != nullptr)
-		assert(outPathR->size() == 0);
+// 	if (with_path && outPathR != nullptr)
+// 		assert(outPathR->size() == 0);
 
-	bool found = false;
-	double total_cost = 0.;
-	auto UtilityPairCmp = [](UtilityPair p1, UtilityPair p2) { return p1.first < p2.first; };
+// 	bool found = false;
+// 	double total_cost = 0.;
+// 	auto UtilityPairCmp = [](UtilityPair p1, UtilityPair p2) { return p1.first < p2.first; };
 
-	std::set<Vector2d, Vector2dComp> visited;
-	std::priority_queue<UtilityPair, std::vector<UtilityPair>, 
-						decltype(UtilityPairCmp)> frontier{UtilityPairCmp};
-	std::unordered_map<Vector2d, UtilityPair, Vector2dHash<Vector2d> > branch;
+// 	std::set<Vector2d, Vector2dComp> visited;
+// 	std::priority_queue<UtilityPair, std::vector<UtilityPair>, 
+// 						decltype(UtilityPairCmp)> frontier{UtilityPairCmp};
+// 	std::unordered_map<Vector2d, UtilityPair, Vector2dHash<Vector2d> > branch;
 
-	std::vector<std::pair<Vector2d, double> > actions;
-	for (int i = -1; i < 2; i++) {
-		for (int j = -1; j < 2; j++) {
-			if (i == 0 && j == 0)
-				continue;
+// 	std::vector<std::pair<Vector2d, double> > actions;
+// 	for (int i = -1; i < 2; i++) {
+// 		for (int j = -1; j < 2; j++) {
+// 			if (i == 0 && j == 0)
+// 				continue;
 
-			Vector2d action(i, j);
-			actions.push_back(std::make_pair(action, action.norm()));
-		}
-	}
+// 			Vector2d action(i, j);
+// 			actions.push_back(std::make_pair(action, action.norm()));
+// 		}
+// 	}
 
-	Vector2d start_node(CGAL::to_double(start.x()), CGAL::to_double(start.y()));
-	Vector2d goal_node(CGAL::to_double(goal.x()), CGAL::to_double(goal.y()));
+// 	Vector2d start_node(CGAL::to_double(start.x()), CGAL::to_double(start.y()));
+// 	Vector2d goal_node(CGAL::to_double(goal.x()), CGAL::to_double(goal.y()));
 
-	frontier.push(std::make_pair(0., start_node));
-	visited.insert(start_node);
+// 	frontier.push(std::make_pair(0., start_node));
+// 	visited.insert(start_node);
 
-	while (!frontier.empty()) {
-		std::pair<double, Vector2d> item = frontier.top();
-		frontier.pop();
+// 	while (!frontier.empty()) {
+// 		std::pair<double, Vector2d> item = frontier.top();
+// 		frontier.pop();
 
-		if ((goal_node - item.second).norm() < step_size) {
-		// if (goal_node == item.second) {
-			found = true;
-			break;
-		} else {
-			for (std::pair<Vector2d, double>& act : actions) {
-				Vector2d next_node = item.second + act.first;
+// 		if ((goal_node - item.second).norm() < step_size) {
+// 		// if (goal_node == item.second) {
+// 			found = true;
+// 			break;
+// 		} else {
+// 			for (std::pair<Vector2d, double>& act : actions) {
+// 				Vector2d next_node = item.second + act.first;
 
-				inside_check = CGAL::oriented_side(Point_2(next_node(0), next_node(1)), environment);
-				if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
-					continue;
+// 				inside_check = CGAL::oriented_side(Point_2(next_node(0), next_node(1)), environment);
+// 				if (inside_check != CGAL::ON_ORIENTED_BOUNDARY && inside_check != CGAL::POSITIVE) 
+// 					continue;
 
-				std::set<Vector2d>::iterator v_itr = visited.find(next_node);
-				if (v_itr != visited.end())
-					continue;
+// 				std::set<Vector2d>::iterator v_itr = visited.find(next_node);
+// 				if (v_itr != visited.end())
+// 					continue;
 
-				Vector2d diff = goal_node - next_node;
-				double cost = item.first + act.second + std::fabs(diff(0)) + std::fabs(diff(1));
-				UtilityPair entry = std::make_pair(cost, next_node);
+// 				Vector2d diff = goal_node - next_node;
+// 				double cost = item.first + act.second + std::fabs(diff(0)) + std::fabs(diff(1));
+// 				UtilityPair entry = std::make_pair(cost, next_node);
 
-				frontier.push(entry);
-				branch[next_node] = entry;
-				visited.insert(next_node);
-			}
-		}
-	}
+// 				frontier.push(entry);
+// 				branch[next_node] = entry;
+// 				visited.insert(next_node);
+// 			}
+// 		}
+// 	}
 
-	if (found) {
-		total_cost = branch[goal_node].first;
+// 	if (found) {
+// 		total_cost = branch[goal_node].first;
 
-		if (with_path && outPathR != nullptr) {
-			Vector2d temp = goal_node;
-			outPathR->push_back(goal_node);
+// 		if (with_path && outPathR != nullptr) {
+// 			Vector2d temp = goal_node;
+// 			outPathR->push_back(goal_node);
 
-			// while (branch[temp].second != start_node) {
-			while ((branch[temp].second - start_node).norm() > step_size) {
-				outPathR->push_back(temp);
-				temp = branch[temp].second;
-			}
+// 			// while (branch[temp].second != start_node) {
+// 			while ((branch[temp].second - start_node).norm() > step_size) {
+// 				outPathR->push_back(temp);
+// 				temp = branch[temp].second;
+// 			}
 
-			outPathR->push_back(temp);
-		}
-	} else {
-		if (debug) {
-			std::cout << "There is no valid path from (" 
-					  << start_node(0) << ", " << start_node(1) << ") to ("
-					  << goal_node(0) << ", " << goal_node(1) << ")\n";
-		}
+// 			outPathR->push_back(temp);
+// 		}
+// 	} else {
+// 		if (debug) {
+// 			std::cout << "There is no valid path from (" 
+// 					  << start_node(0) << ", " << start_node(1) << ") to ("
+// 					  << goal_node(0) << ", " << goal_node(1) << ")\n";
+// 		}
 
-		total_cost = -1;
-	}
+// 		total_cost = -1;
+// 	}
 
-	return total_cost;
-}
+// 	return total_cost;
+// }
 
-void mark_domains(CDT& ct, CDT_Face_handle start, int index, std::list<CDT::Edge>& border) {
-	if (start->info().nesting_level != -1) {
-		return;
-	}
+// void mark_domains(CDT& ct, CDT_Face_handle start, int index, std::list<CDT::Edge>& border) {
+// 	if (start->info().nesting_level != -1) {
+// 		return;
+// 	}
 
-	std::list<CDT_Face_handle> queue;
-	queue.push_back(start);
+// 	std::list<CDT_Face_handle> queue;
+// 	queue.push_back(start);
 
-	while (!queue.empty()) {
-		CDT_Face_handle fh = queue.front();
-		queue.pop_front();
+// 	while (!queue.empty()) {
+// 		CDT_Face_handle fh = queue.front();
+// 		queue.pop_front();
 
-		if (fh->info().nesting_level == -1) {
-			fh->info().nesting_level = index;
+// 		if (fh->info().nesting_level == -1) {
+// 			fh->info().nesting_level = index;
 
-			for (int i = 0; i < 3; i++) {
-				CDT::Edge e(fh, i);
-				CDT_Face_handle n = fh->neighbor(i);
+// 			for (int i = 0; i < 3; i++) {
+// 				CDT::Edge e(fh, i);
+// 				CDT_Face_handle n = fh->neighbor(i);
 
-				if (n->info().nesting_level == -1) {
-					if (ct.is_constrained(e)) 
-						border.push_back(e);
+// 				if (n->info().nesting_level == -1) {
+// 					if (ct.is_constrained(e)) 
+// 						border.push_back(e);
 
-					else 
-						queue.push_back(n);
-				}
-			}
-		}
-	}
-}
+// 					else 
+// 						queue.push_back(n);
+// 				}
+// 			}
+// 		}
+// 	}
+// }
 
-void mark_domains(CDT& cdt) {
-	for (CDT::Face_handle f : cdt.all_face_handles()) {
-		f->info().nesting_level = -1;
-	}
+// void mark_domains(CDT& cdt) {
+// 	for (CDT::Face_handle f : cdt.all_face_handles()) {
+// 		f->info().nesting_level = -1;
+// 	}
 
-	std::list<CDT::Edge> border;
-	mark_domains(cdt, cdt.infinite_face(), 0, border);
+// 	std::list<CDT::Edge> border;
+// 	mark_domains(cdt, cdt.infinite_face(), 0, border);
 
-	while (!border.empty()) {
-		CDT::Edge e = border.front();
-		border.pop_front();
+// 	while (!border.empty()) {
+// 		CDT::Edge e = border.front();
+// 		border.pop_front();
 
-		CDT::Face_handle n = e.first->neighbor(e.second);
-		if (n->info().nesting_level == -1) {
-			mark_domains(cdt, n, e.first->info().nesting_level + 1, border);
-		}
-	}
-}
+// 		CDT::Face_handle n = e.first->neighbor(e.second);
+// 		if (n->info().nesting_level == -1) {
+// 			mark_domains(cdt, n, e.first->info().nesting_level + 1, border);
+// 		}
+// 	}
+// }
 
-void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt) {
-	outCdt.insert_constraint(pwh.outer_boundary().vertices_begin(), 
-							 pwh.outer_boundary().vertices_end(), true);
+// void get_cdt_of_polygon_with_holes(Polygon_with_holes_2& pwh, CDT& outCdt) {
+// 	outCdt.insert_constraint(pwh.outer_boundary().vertices_begin(), 
+// 							 pwh.outer_boundary().vertices_end(), true);
 
-	HoleIterator h_itr = pwh.holes_begin();
-	for (; h_itr != pwh.holes_end(); h_itr++) {
-		outCdt.insert_constraint(h_itr->vertices_begin(), h_itr->vertices_end(), true);
-	}
+// 	HoleIterator h_itr = pwh.holes_begin();
+// 	for (; h_itr != pwh.holes_end(); h_itr++) {
+// 		outCdt.insert_constraint(h_itr->vertices_begin(), h_itr->vertices_end(), true);
+// 	}
 
-	assert(outCdt.is_valid());
-	mark_domains(outCdt);
-}
+// 	assert(outCdt.is_valid());
+// 	mark_domains(outCdt);
+// }
 
 BFSAgent::BFSAgent() {}
 BFSAgent::BFSAgent(uint8_t _id, Vector2d& pos, Vector2d& gpos, double _step_size) : 
@@ -205,8 +205,8 @@ void BFSAgent::add_border_info(std::pair<double, double> border_vertex, uint8_t 
 	}
 }
 
-std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveAction>& actions, 
-															   Polygon_with_holes_2& context) {
+std::set<std::pair<double, double> > BFSAgent::frontier_expand(const std::vector<MoveAction>& actions, 
+															   const Polygon_with_holes_2& context) {
 	if (frontier.size() == 0)
 		return frontier;
 
@@ -216,18 +216,15 @@ std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveA
 		std::pair<double, double> f_pos = *f_pos_itr;
 		Vector2d f_pos_v(f_pos.first, f_pos.second);
 
-		// std::map<std::pair<double, double>, 
-		// 		 std::vector<std::pair<double, double> > >::iterator e_list_itr = edges.find(f_pos);
 		std::map<std::pair<double, double>, 
 				 std::set<std::pair<double, double> > >::iterator e_list_itr = edges.find(f_pos);
 
 		if (e_list_itr == edges.end()) {
-			// edges.insert(std::make_pair(f_pos, std::vector<std::pair<double, double> >()));
 			edges.insert(std::make_pair(f_pos, std::set<std::pair<double, double> >()));
 		}
 
 		// for (MoveAction& act : actions) {
-		for (uint8_t act_i = 0; act_i < 4; act_i++) {
+		for (uint8_t act_i = 0; act_i < actions.size(); act_i++) {
 			// Vector2d next_pos = act.first * step_size + f_pos_v;
 			Vector2d next_pos = actions[act_i].first * step_size + f_pos_v;
 
@@ -239,7 +236,6 @@ std::set<std::pair<double, double> > BFSAgent::frontier_expand(std::vector<MoveA
 			// 	continue;
 
 			std::pair<double, double> next_pos_key = std::make_pair(next_pos(0), next_pos(1));
-			// edges[f_pos].push_back(next_pos_key);
 			edges[f_pos].insert(next_pos_key);
 			edges[next_pos_key].insert(f_pos);
 
@@ -537,7 +533,7 @@ std::vector<Point_2> SkeletalGraph::getVerticesAsCgalPoints() {
 	return vertices;
 }
 
-std::vector<UtilityPair> SkeletalGraph::getNextToVertexFrom(Vector2d& fromV, Vector2d& toV) {
+std::vector<UtilityPair> SkeletalGraph::getNextToVertexFrom(const Vector2d& fromV, const Vector2d& toV) {
 	std::vector<UtilityPair> distances;
 
 	std::unordered_map<int, SkeletalNode>::iterator v_itr = vertex_map.begin();
@@ -572,15 +568,19 @@ Vector2d SkeletalGraph::getNext(Vector2d& start, Vector2d& goal, double& outDist
 	return vertex_map[v_id].point;
 }
 
-std::vector<Vector2d> SkeletalGraph::getPathToVertex(Vector2d& start, Vector2d& goal, bool debug) {
+std::vector<Vector2d> SkeletalGraph::getPathToVertex(const Vector2d& start, const Vector2d& goal, bool debug) {
 	std::map<std::pair<double, double>, int>::iterator s_id_itr = rid_map.find(std::make_pair(start(0), start(1)));
 	std::map<std::pair<double, double>, int>::iterator g_id_itr = rid_map.find(std::make_pair(goal(0), goal(1)));
 
-	if (s_id_itr == rid_map.end())
+	if (s_id_itr == rid_map.end()) {
 		std::cout << "Start position is NOT found!\n";
+		return std::vector<Vector2d>();
+	}
 
-	if (g_id_itr == rid_map.end())
+	if (g_id_itr == rid_map.end()) {
 		std::cout << "Goal position is NOT found!\n";
+		return std::vector<Vector2d>();
+	}
 
 	int s_id = rid_map[std::make_pair(start(0), start(1))];
 	int g_id = rid_map[std::make_pair(goal(0), goal(1))];
@@ -608,3 +608,16 @@ std::vector<Vector2d> SkeletalGraph::getPathToVertex(Vector2d& start, Vector2d& 
 
 	return the_path;
 }
+
+// double SkeletalGraph::getMaxDistFromPoint(const Vector2d& point) {
+// 	auto s_id_itr = rid_map.find(std::make_pair(start(0), start(1)));
+
+// 	if (s_id_itr == rid_map.end()) {
+// 		std::cout << "[getMaxDistFromPoint] Start position is NOT found!\n";
+// 		return std::vector<Vector2d>();
+// 	}
+
+// 	int s_id = rid_map[std::make_pair(start(0), start(1))];
+
+// 	return graph.rowwise().maxCoeff()[s_id];
+// }
